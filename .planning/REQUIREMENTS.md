@@ -60,26 +60,26 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ALG-01 | — | Pending |
-| ALG-02 | — | Pending |
-| ALG-03 | — | Pending |
-| ALG-04 | — | Pending |
-| ALG-05 | — | Pending |
-| MAP-01 | — | Pending |
-| MAP-02 | — | Pending |
-| MAP-03 | — | Pending |
-| TEST-01 | — | Pending |
-| TEST-02 | — | Pending |
-| UTIL-01 | — | Pending |
-| UTIL-02 | — | Pending |
-| UTIL-03 | — | Pending |
-| UTIL-04 | — | Pending |
+| ALG-01 | Phase 1 | Pending |
+| ALG-02 | Phase 1 | Pending |
+| ALG-03 | — (on-demand via /gsd:quick) | Pending |
+| ALG-04 | — (on-demand via /gsd:quick) | Pending |
+| ALG-05 | Phase 1 | Pending |
+| MAP-01 | — (on-demand via /gsd:quick) | Pending |
+| MAP-02 | — (on-demand via /gsd:quick) | Pending |
+| MAP-03 | — (on-demand via /gsd:quick) | Pending |
+| TEST-01 | — (on-demand via /gsd:quick) | Pending |
+| TEST-02 | — (on-demand via /gsd:quick) | Pending |
+| UTIL-01 | — (on-demand via /gsd:quick) | Pending |
+| UTIL-02 | — (on-demand via /gsd:quick) | Pending |
+| UTIL-03 | — (on-demand via /gsd:quick) | Pending |
+| UTIL-04 | — (on-demand via /gsd:quick) | Pending |
 
 **Coverage:**
 - v1 requirements: 14 total
-- Mapped to phases: 0
-- Unmapped: 14 ⚠️ (awaiting roadmap)
+- Mapped to phases: 3 (single-phase roadmap per user decision — user drives the rest via /gsd:quick)
+- Unmapped: 11 (deliberately on-demand, not a gap)
 
 ---
 *Requirements defined: 2026-11-12*
-*Last updated: 2026-11-12 after initial definition*
+*Last updated: 2026-11-12 after roadmap creation*
