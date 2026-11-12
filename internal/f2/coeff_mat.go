@@ -181,15 +181,15 @@ func (self *CoeffMat) Apply(that Vector) Vector {
 
   for i := 0; i < self.m; i++ {
     m := []Expr{}
-    // map part, ie element wise addition
+    // map part, ie element wise multiplication (AND)
     for j := 0; j < self.n; j++ {
-      m = append(m, NewBinary(Add, self.Index(i, j), that.Index(j)))
+      m = append(m, NewBinary(Mul, self.Index(i, j), that.Index(j)))
     }
 
-    // reduce part, ie reduction cross the axis
+    // reduce part, ie reduction cross the axis via addition (XOR)
     cur := m[0]
     for _, v := range m[1:] {
-      cur = NewBinary(Mul, cur, v)
+      cur = NewBinary(Add, cur, v)
     }
 
     // now we have reduced result, performs a folding

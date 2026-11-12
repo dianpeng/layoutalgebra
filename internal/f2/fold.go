@@ -52,16 +52,20 @@ type rewriteSymbol struct {
   rewriteBinary
 }
 
-var rewriteEngine = make(map[string]rewriteRules)
-
-func init() {
-  rewriteEngine["fold"] = &rewriteFold{}
-  rewriteEngine["commute"] = &rewriteCommute{}
-  rewriteEngine["idempotent"] = &rewriteIdempotent{}
-  rewriteEngine["reassociation"] = &rewriteReassociation{}
-  rewriteEngine["distribution"] = &rewriteDistribution{}
-  rewriteEngine["normalization"] = &rewriteNormalization{}
-  rewriteEngine["symbol"] = &rewriteSymbol{}
+// rewriteRuleOrder fixes the rule iteration order. The driver MUST iterate
+// rules in this exact order: Go map iteration is randomized per run, so with
+// the old map-driven driver, when two rules matched the same node the chosen
+// rewrite (hence the canonical form) could differ between runs. Rule structs
+// are stateless (they only embed the empty rewriteBinary), so shared instances
+// are safe.
+var rewriteRuleOrder = []rewriteRules{
+  &rewriteFold{},
+  &rewriteCommute{},
+  &rewriteIdempotent{},
+  &rewriteReassociation{},
+  &rewriteDistribution{},
+  &rewriteNormalization{},
+  &rewriteSymbol{},
 }
 
 func (self *rewriteBinary) Check(n Expr) bool {
@@ -273,8 +277,8 @@ func (self *rewriteNormalization) Rewrite(node Expr) (Expr, error) {
         // better approach is to perform a data flow analysis to assert expression's
         // constantcy, hence we can sure that we just reassociate it directly. 
         if IsStaticExprRecursive(a) && IsStaticExprRecursive(c) && b.IsEqual(d) {
-          coeff := NewBinary(Add, a, b)
-          return NewBinary(Mul, coeff, c), nil
+          coeff := NewBinary(Add, a, c)
+          return NewBinary(Mul, coeff, b), nil
         }
       }
     }
@@ -362,7 +366,7 @@ type folder struct {
 
 func (self *folder) rewrite(expr Expr) error {
   didReplace := false
-  for _, r := range rewriteEngine {
+  for _, r := range rewriteRuleOrder {
     if r.Check(expr) {
       replacement, err := r.Rewrite(expr)
       if err != nil {
