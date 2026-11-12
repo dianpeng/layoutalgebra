@@ -24,19 +24,18 @@ to a tile offset as an F₂ vector the user can interpret into generated code.
 
 <!-- Shipped and confirmed valuable. -->
 
-(None yet — ship to validate)
+- [x] Core F₂ expression tree (variables, constants, binary XOR/AND ops) with structural equality — Validated in Phase 1 (ALG-01)
+- [x] Expression simplification/folding (`internal/f2/fold.go`) — Validated in Phase 1 (ALG-02)
+- [x] Tree compiles cleanly — `go build ./...` and `go vet ./...` pass — Validated in Phase 1 (ALG-05)
 
 ### Active
 
 <!-- Current scope. Building toward these. -->
 
-- [ ] Core F₂ expression tree (variables, constants, binary XOR/AND ops) with structural equality — drafted in `internal/f2/expr.go`
-- [ ] Expression simplification/folding (`internal/f2/fold.go`) — drafted
-- [ ] F₂ vector representation over expression trees (`internal/f2/vector.go`) — drafted
-- [ ] Coefficient matrix + matrix ops (`coeff_mat.go`, `matop.go`) — drafted
-- [ ] Layout map types: access map, swizzle map, stride map — drafted
-- [ ] Expression visitor (`internal/f2/visit.go`) — drafted
-- [ ] Tree compiles cleanly (`go build ./...` passes); currently does not — syntax errors across `expr.go`, `coeff_mat.go`
+- [ ] F₂ vector representation over expression trees (`internal/f2/vector.go`) — compiles; matrix/elimination layer has known critical bugs (01-REVIEW.md CR-01..CR-06), on-demand
+- [ ] Coefficient matrix + matrix ops (`coeff_mat.go`, `matop.go`) — compiles; known critical bugs (01-REVIEW.md CR-01..CR-03), on-demand
+- [ ] Layout map types: access map, swizzle map, stride map — compiles; swizzle path has known critical bug (01-REVIEW.md CR-07), on-demand
+- [ ] Expression visitor (`internal/f2/visit.go`) — compiles; no dedicated tests yet
 - [ ] Comprehensive unit tests (stdlib `testing`, table-driven) for all packages
 - [ ] Utility: expression dumper (infix/prefix string output with variable names)
 - [ ] Utility: vector/matrix pretty printer (per-bit F₂ expression tables)
@@ -55,7 +54,7 @@ to a tile offset as an F₂ vector the user can interpret into generated code.
 ## Context
 
 - Language: Go (toolchain go1.26.2), module `github.com/dianpeng/f2algebra`, packages under `internal/` (`f2`, `check`, `common`).
-- Existing code (~2000 lines) is user-written and mid-development: core algebra mostly written, edges rough, **tree does not compile yet** (known syntax errors in `expr.go`, `coeff_mat.go`; import typo in `vector.go` already fixed, `common.IsPowerOf2` parameter bug already fixed).
+- Existing code (~2000 lines) is user-written: after Phase 1 the whole module compiles and vets clean; the expression tree, folding, and structural-equality layer is tested (17 tests). The matrix/elimination/swizzle layer compiles but has known critical bugs documented in `.planning/phases/01-build-fix-working-algebra-core/01-REVIEW.md` — that work is on-demand via `/gsd:quick`.
 - Design invariant (from `expr.go` doc comment): expressions are always trees, never DAGs — simplification never performs expression elimination; each node is unique in the tree. This guarantees correctness/simplicity and must be preserved.
 - Expression ops: `Xor` (Add), `And` (Mul) over `F2 = bool` scalars; `NodeKind` = Variable | Const | Binary | Symbol.
 - Correctness verification approach: TBD per case when the user calls Claude in — options include expr-level equivalence checks and concrete reference checks against known layouts.
@@ -75,7 +74,7 @@ to a tile offset as an F₂ vector the user can interpret into generated code.
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
 | Module path `github.com/dianpeng/f2algebra` | Matches existing import paths in the source tree | — Pending |
-| Expressions stay trees, never DAGs; no expression elimination in simplification | User's core design invariant for correctness guarantees | — Pending |
+| Expressions stay trees, never DAGs; no expression elimination in simplification | User's core design invariant for correctness guarantees | Validated in Phase 1 (TestFoldNoAliasing) |
 | Symbolic M, N as compile-time parameters; concrete substitution at code-gen time | User's answer on parametrization: vector is generic, codegen substitutes values | — Pending |
 | Verification approach decided case-by-case | User prefers to decide as things come up | — Pending |
 
@@ -97,4 +96,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-11-12 after initialization*
+*Last updated: 2026-11-12 after Phase 1 completion*
