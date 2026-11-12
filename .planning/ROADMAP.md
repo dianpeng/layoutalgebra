@@ -34,7 +34,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 Plans:
 **Wave 1**
 
-- [ ] 01-01: Fix all syntax/build errors across internal/ until `go build ./...` passes
+- [x] 01-01: Fix all syntax/build errors across internal/ until `go build ./...` passes
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -52,4 +52,4 @@ The remaining v1 requirements are deliberately NOT planned into phases. The user
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Build Fix & Working Algebra Core | 0/2 | Not started | - |
+| 1. Build Fix & Working Algebra Core | 1/2 | In Progress|  |
