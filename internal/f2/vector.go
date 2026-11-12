@@ -4,7 +4,6 @@ import (
   "fmt"
   "sort"
 
-  "github.com/dianpeng/f2algebra/internal/common"
   "github.com/dianpeng/f2algebra/internal/check"
 )
 
@@ -34,6 +33,16 @@ func (self *Vector) Gather(idxList []int) Vector {
 }
 
 func (self *Vector) Index(idx int) Expr { return self.vec[idx] }
+
+// Slice returns a new Vector holding a copy of the sub-slice [start:end).
+func (self *Vector) Slice(start, end int) Vector {
+  out := make([]Expr, 0, end-start)
+  out = append(out, self.vec[start:end]...)
+  return Vector{vec: out}
+}
+
+// Set replaces the expression at idx with e.
+func (self *Vector) Set(idx int, e Expr) { self.vec[idx] = e }
 
 func (self *Vector) Fold() {
   for idx, expr := range self.vec {
@@ -285,7 +294,7 @@ func (self *Vector) extractLinearCoeffVector(expr Expr, order []string) ([]Expr,
     expr,
     func(Expr) bool { return true },
     func(e Expr) error {
-      switch e.(type) {
+      switch node := e.(type) {
         case *NodeConst:
           e.SetMarker(0)
           break
@@ -299,7 +308,7 @@ func (self *Vector) extractLinearCoeffVector(expr Expr, order []string) ([]Expr,
           break
 
         case *NodeBinary:
-          e.SetMarker(e.L().Marker() + e.R().Marker())
+          e.SetMarker(node.L().Marker() + node.R().Marker())
           break
 
         default:
@@ -322,7 +331,7 @@ func (self *Vector) extractLinearCoeffVector(expr Expr, order []string) ([]Expr,
   // (2) if NOV(R(M)) >= 1 && NOV(L(M)) == 0 && OP(M) == Add => affine
   // (3) if NOV(L(M)) >= 1 && NOV(R(M)) >= 1 && OP(M) == Mul => super-linear
 
-  if err := VisitPre(
+  if err := Visit(
     expr,
     func(b Expr) bool { return b.Kind() == Binary },
     func(e Expr) error {
@@ -423,9 +432,9 @@ func (self *Vector) extractLinearCoeffVector(expr Expr, order []string) ([]Expr,
       // 1) left associative, variables pushed to the right
       // 2) (C1 * v) + (C2 * v) => (C1 + C2) * v (normalization rule)
       check.Check(cR.Kind() == Binary)
-      varExpr := cR.R()
+      varExpr := cR.(*NodeBinary).R()
       check.Check(varExpr.Kind() == Variable)
-      check.Check(varExpr.Name() == vName)
+      check.Check(varExpr.(*NodeVariable).Name() == vName)
 
       // the cL is the expression we need here.
       out = append(out, cL)
