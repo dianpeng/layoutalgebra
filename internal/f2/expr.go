@@ -196,7 +196,9 @@ func (self *NodeSymbol) IsConst() bool { return false }
 func (self *NodeSymbol) IsSymbol() bool { return true }
 
 func (self F2) Add(that F2) F2 { return F2(self != that) }
-func (self F2) Sub(that F2) F2 { return self.Add(that).Add(that) }
+func (self F2) Sub(that F2) F2 {
+  return self.Add(that)
+}
 func (self F2) Mul(that F2) F2 { return F2(self && that) }
 
 // Factory method
