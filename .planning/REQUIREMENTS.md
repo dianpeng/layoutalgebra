@@ -9,8 +9,8 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Core Algebra
 
-- [ ] **ALG-01**: F₂ expression tree (Variable / Const / Symbol / Binary over Xor·And) with structural equality and the tree-never-DAG invariant (no expression elimination during simplification)
-- [ ] **ALG-02**: Expression folding/simplification that preserves input tree structure while reducing constants and redundant operations
+- [x] **ALG-01**: F₂ expression tree (Variable / Const / Symbol / Binary over Xor·And) with structural equality and the tree-never-DAG invariant (no expression elimination during simplification)
+- [x] **ALG-02**: Expression folding/simplification that preserves input tree structure while reducing constants and redundant operations
 - [ ] **ALG-03**: F₂ vector representation — one expression per output bit over input coordinate bits, with vector-level ops
 - [ ] **ALG-04**: Coefficient matrices and matrix operations (multiply, add, transpose/reduce) over F₂ expressions
 - [x] **ALG-05**: `go build ./...` and `go vet ./...` pass clean on the whole module
@@ -60,8 +60,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ALG-01 | Phase 1 | Pending |
-| ALG-02 | Phase 1 | Pending |
+| ALG-01 | Phase 1 | Complete |
+| ALG-02 | Phase 1 | Complete |
 | ALG-03 | — (on-demand via /gsd:quick) | Pending |
 | ALG-04 | — (on-demand via /gsd:quick) | Pending |
 | ALG-05 | Phase 1 | Complete |

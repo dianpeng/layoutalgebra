@@ -13,7 +13,7 @@ Single-phase project: take the user's mid-development Go module from "does not c
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Build Fix & Working Algebra Core** - Module compiles and vets clean; expression tree and folding are correct
+- [x] **Phase 1: Build Fix & Working Algebra Core** - Module compiles and vets clean; expression tree and folding are correct (completed 2026-11-12)
 
 ## Phase Details
 
@@ -38,7 +38,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 01-02: Fix core algebra bugs (fold semantics, structural equality, invariant preservation) until `go vet ./...` passes and fold behaves correctly on a hand-checked set of cases
+- [x] 01-02: Fix core algebra bugs (fold semantics, structural equality, invariant preservation) until `go vet ./...` passes and fold behaves correctly on a hand-checked set of cases
 
 ### Unplanned (on-demand only)
 
@@ -52,4 +52,4 @@ The remaining v1 requirements are deliberately NOT planned into phases. The user
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Build Fix & Working Algebra Core | 1/2 | In Progress|  |
+| 1. Build Fix & Working Algebra Core | 2/2 | Complete   | 2026-11-12 |
