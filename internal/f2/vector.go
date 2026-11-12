@@ -26,8 +26,8 @@ func (self *Vector) Extent(idx int) Expr { return self.vec[idx] }
 
 func (self *Vector) Gather(idxList []int) Vector {
   out := make([]Expr, len(idxList), len(idxList))
-  for _, idx := range idxList {
-    out[idx] = self.vec[idx]
+  for i, idx := range idxList {
+    out[i] = self.vec[idx]
   }
   return Vector{vec: out}
 }
