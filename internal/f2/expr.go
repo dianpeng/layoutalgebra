@@ -8,7 +8,9 @@ import "fmt"
 // correctness and simpliness. Implicitly, it also means each node is unique in the
 // tree, which is also very critical for us.
 
-type F2 = bool // scalar type
+// F2 is the scalar type of the field (underlying bool). It is a defined type
+// (not an alias) so that scalar operations can be expressed as methods.
+type F2 bool
 
 type NodeKind = int
 
@@ -127,8 +129,8 @@ func Replace(root Expr, r []Replacement) Expr {
   return root // notes root may be mutated as well
 }
 
-func (self F2) IsZero() bool { return !self }
-func (self F2) IsOne() bool  { return self }
+func (self F2) IsZero() bool { return bool(!self) }
+func (self F2) IsOne() bool  { return bool(self) }
 func (self F2) Int() uint {
   if self {
     return 1
@@ -167,7 +169,7 @@ func (self *NodeBinary) Kind() NodeKind { return Binary }
 func (self *NodeBinary) IsEqual(that Expr) bool {
   if tN, ok := that.(*NodeBinary); ok {
     if tN.op == self.op {
-      return self.l.IsEqual(that.l) && self.r.IsEqual(that.r)
+      return self.l.IsEqual(tN.l) && self.r.IsEqual(tN.r)
     }
   }
   return false
@@ -193,9 +195,9 @@ func (self *NodeSymbol) staticNode() {}
 func (self *NodeSymbol) IsConst() bool { return false }
 func (self *NodeSymbol) IsSymbol() bool { return true }
 
-func (self F2) Add(that F2) F2 { return self != that }
+func (self F2) Add(that F2) F2 { return F2(self != that) }
 func (self F2) Sub(that F2) F2 { return self.Add(that).Add(that) }
-func (self F2) Mul(that F2) F2 { return self && that }
+func (self F2) Mul(that F2) F2 { return F2(self && that) }
 
 // Factory method
 func NewConst(value F2) *NodeConst { return &NodeConst{value: value} }

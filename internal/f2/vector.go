@@ -1,6 +1,9 @@
 package f2
 
 import (
+  "fmt"
+  "sort"
+
   "github.com/dianpeng/f2algebra/internal/common"
   "github.com/dianpeng/f2algebra/internal/check"
 )
@@ -161,14 +164,37 @@ func (self *Vector) BasisName() []string {
   return out
 }
 
+// GetExprVariableNameSet returns the distinct names of all *NodeVariable
+// nodes in the expression tree, in deterministic (sorted) order.
+func GetExprVariableNameSet(e Expr) []string {
+  dict := make(map[string]bool)
+  Visit(
+    e,
+    func(val Expr) bool {
+      _, ok := val.(*NodeVariable)
+      return ok
+    },
+    func(v Expr) error {
+      dict[v.(*NodeVariable).Name()] = true
+      return nil
+    },
+  )
+  out := make([]string, 0, len(dict))
+  for name := range dict {
+    out = append(out, name)
+  }
+  sort.Strings(out)
+  return out
+}
+
 func (self *Vector) CoeffMat(basis []string) (CoeffMat, error) { return self.doCoeffMat(self.vec, basis) }
-func (self *Vector) CeoffMatAll() (CeoffMat, error) {
+func (self *Vector) CoeffMatAll() (CoeffMat, error) {
   return self.CoeffMat(self.BasisName())
 }
 
 func (self *Vector) doCoeffMat(vec []Expr, basis []string) (CoeffMat, error) {
   // slow check
-  check.SlowCheck(
+  check.Check(
     func() bool {
       // ensure that all given basis shows up in the Basis list, otherwise failed
       basisList := self.Basis()
@@ -187,7 +213,7 @@ func (self *Vector) doCoeffMat(vec []Expr, basis []string) (CoeffMat, error) {
         }
       }
       return true
-    },
+    }(),
   )
 
   // (1) Turning each expression tree into a tree that symbolize all unknown variables
@@ -211,15 +237,15 @@ func (self *Vector) doCoeffMat(vec []Expr, basis []string) (CoeffMat, error) {
   coeff := [][]Expr{}
 
   for _, expr := range tVec {
-    tLinearCoeff, err = self.extractLinearCoeffVector(expr, basis)
+    tLinearCoeff, err := self.extractLinearCoeffVector(expr, basis)
     if err != nil {
-      return err // not linear typically
+      return CoeffMat{}, err // not linear typically
     }
     coeff = append(coeff, tLinearCoeff)
   }
 
   // (3) Create the CoeffMat accordingly
-  return NewCoeffMatFromVectorList(coeff), nil
+  return NewCoeffMat(coeff), nil
 }
 
 // Overall the algorithm is breaking down as following
@@ -259,7 +285,7 @@ func (self *Vector) extractLinearCoeffVector(expr Expr, order []string) ([]Expr,
     expr,
     func(Expr) bool { return true },
     func(e Expr) error {
-      switch node := e.(type) {
+      switch e.(type) {
         case *NodeConst:
           e.SetMarker(0)
           break
@@ -279,6 +305,7 @@ func (self *Vector) extractLinearCoeffVector(expr Expr, order []string) ([]Expr,
         default:
           break
       }
+      return nil
     },
   )
 
@@ -322,8 +349,8 @@ func (self *Vector) extractLinearCoeffVector(expr Expr, order []string) ([]Expr,
   // one more case, the expression is entirely not parametrized by the basis, which is
   // yet anoter none linearity, ie affine from zero vector
   if expr.Marker() == 0 {
-    if expr.Kind() != Const || !expr.(*NodeConst).IsZero() {
-      return fmt.Errorf("affine from zero vector")
+    if expr.Kind() != Const || !expr.(*NodeConst).Value().IsZero() {
+      return nil, fmt.Errorf("affine from zero vector")
     }
   }
 
@@ -332,17 +359,15 @@ func (self *Vector) extractLinearCoeffVector(expr Expr, order []string) ([]Expr,
   //       scanning, hence we need to use ad-hoc method
   exprMap := make(map[string]Expr)
   danglingMul := []Expr{} // distributed back to expression in exprMap as multiplications
-  var forwardVisit func(Expr) error // need recursion
+  var forwardVisit func(parent *NodeBinary, e Expr) error // need recursion
   forwardVisit = func(parent *NodeBinary, e Expr) error {
     numOfVars := e.Marker()
     if numOfVars > 1 {
       check.Check(e.Kind() == Binary)
       bin := e.(*NodeBinary)
-      lMarker := bin.L().Marker()
-      rMarker := bin.R().Marker()
       forwardVisit(bin, bin.L())
       forwardVisit(bin, bin.R())
-      return
+      return nil
     } else if numOfVars == 1 {
       nameSet := GetExprVariableNameSet(e)
       check.Check(len(nameSet) == 1)
@@ -352,13 +377,13 @@ func (self *Vector) extractLinearCoeffVector(expr Expr, order []string) ([]Expr,
       // For this branch, we met a dangling constant term
       // 1) If <expr> add <const-term> => affine transformation, none linear reject
       // 2) If <expr> mul <const-term> => linear transformation, distributed law
-      check.NotNil(parent)
-      check.Check(parernt.Op() != Add) // none linearity, already caught must
+      check.CheckNotNil(parent)
+      check.Check(parent.Op() != Add) // none linearity, already caught must
       danglingMul = append(danglingMul, e)
     }
     return nil
   }
-  if err := forwardVisit(expr); err != nil {
+  if err := forwardVisit(nil, expr); err != nil {
     return nil, err
   }
 
@@ -381,7 +406,7 @@ func (self *Vector) extractLinearCoeffVector(expr Expr, order []string) ([]Expr,
   //     however complicated it is, we can be able to extract them cleanly. Basically
   //     just chasing the expression to collect all LHS symbols until the inner most
   //     RHS symbol, which is a variable (MUST) due to the fold
-  out = make([]Expr, 0, len(exprMap))
+  out := make([]Expr, 0, len(order))
   for _, vName := range order {
     c := exprMap[vName]
     if c != nil {
@@ -421,7 +446,7 @@ func NewWithClone(x []Expr) Vector {
 
 func NewVector(x []Expr) Vector { return Vector{vec: x} }
 
-func NewVectorWithFold(x []Expr) Vecotr {
+func NewVectorWithFold(x []Expr) Vector {
   v := NewVector(x)
   v.Fold()
   return v
@@ -441,12 +466,12 @@ func NewVectorWithFold(x []Expr) Vecotr {
 //
 // Notes, the warpX/thrX's X representing the **dimension index**
 func NewFromHardware(bits []int, namePrefix []string) Vector {
-  check.Check(len(bounds) == len(namePrefix))
+  check.Check(len(bits) == len(namePrefix))
   out := []Expr{}
 
-  // each extent in bounds must be power of 2
-  for idx, bound := range bounds {
-    bit = bits[idx]
+  // each extent in bits must be power of 2
+  for idx := range bits {
+    bit := bits[idx]
     prefix := namePrefix[idx]
     for i := 0; i < bit; i++ {
       out = append(out, NewVariable(fmt.Sprintf("%s_%d", prefix, i)))
@@ -493,10 +518,10 @@ func NewFromSemanticMapping(dims [][]int, namePrefix []string) Vector {
   }
   for dim, dimList := range dims {
     for _, v := range dimList {
-      name := namePrefix[idx] // main  name
+      name := namePrefix[dim] // main  name
       for i := 0; i < v; i++ {
         c    := counter[name]   // counter
-        out = append(out, NewVaraible(fmt.Sprintf("%s%d_%d", dim, c)))
+        out = append(out, NewVariable(fmt.Sprintf("%s%d_%d", name, dim, c)))
         counter[name] = c + 1
       }
     }
