@@ -170,7 +170,7 @@ func RankConstMat(input CoeffMat) (int, error) {
 // a binary bit pattern. (a1, a2, ..., am) << k => (ak, ak+1, ..., am). The shift is
 // assumed to be unsigned integer shifts, ie bit left will be zeroed
 func ShiftMatrix(size int, k int) CoeffMat {
-  check.Check(k >= 0, "shift matrix: negative k %d", k)
+  check.Check(k >= 0, fmt.Sprintf("shift matrix: negative k %d", k))
   if k >= size {
     return NewCoeffMatAllZero(size, size)
   }

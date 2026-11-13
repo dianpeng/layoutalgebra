@@ -1,6 +1,7 @@
 package check
 
 import (
+  "fmt"
   "strings"
   "testing"
 )
@@ -42,5 +43,5 @@ func TestCheckNormalMessageStillWorks(t *testing.T) {
       t.Errorf("panic message %q does not contain formatted %q", msg, "boom 7")
     }
   }()
-  Check(false, "boom %d", 7)
+  Check(false, fmt.Sprintf("boom %d", 7))
 }

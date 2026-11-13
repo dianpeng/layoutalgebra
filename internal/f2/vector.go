@@ -55,9 +55,7 @@ func (self *Vector) Fold() {
 func (self *Vector) Add(that Vector) Vector {
   check.Check(
     self.Size() == that.Size(),
-    "vector add size mismatch: %d vs %d",
-    self.Size(),
-    that.Size(),
+    fmt.Sprintf("vector add size mismatch: %d vs %d", self.Size(), that.Size()),
   )
   out := []Expr{}
   for idx, v := range that.vec {
@@ -550,9 +548,7 @@ func NewFromHardware(bits []int, namePrefix []string) Vector {
 func NewFromSemanticMapping(dims [][]int, namePrefix []string) Vector {
   check.Check(
     len(namePrefix) >= len(dims),
-    "semantic mapping: %d dims but %d prefixes",
-    len(dims),
-    len(namePrefix),
+    fmt.Sprintf("semantic mapping: %d dims but %d prefixes", len(dims), len(namePrefix)),
   )
   counter := make(map[string]int) // counter map for each name, notes no dimension and idx suffix
   out := []Expr{}
