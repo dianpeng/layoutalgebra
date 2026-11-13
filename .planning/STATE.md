@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-11-12)
 Phase: 01
 Plan: Not started
 Status: Milestone complete
-Last activity: 2026-11-12
+Last activity: 2026-11-13 - Completed quick task 261113-gll: fix WR-01..WR-15 warnings + layout-pipeline test coverage
 
 Progress: [██████████] 100%
 
@@ -76,6 +76,12 @@ Recent decisions affecting current work:
 ### Blockers
 
 (None yet)
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Status | Directory |
+|---|-------------|------|--------|--------|-----------|
+| 261113-gll | Fix remaining review warnings WR-01..WR-15 in internal/f2 and add comprehensive F2 algebra test coverage for layout-calculation pipelines | 2026-11-13 | e92ea9b | Verified | [261113-gll-fix-remaining-review-warnings-wr-01-wr-1](./quick/261113-gll-fix-remaining-review-warnings-wr-01-wr-1/) |
 
 ## Session Continuity
 

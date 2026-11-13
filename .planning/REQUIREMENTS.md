@@ -11,20 +11,20 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [x] **ALG-01**: F₂ expression tree (Variable / Const / Symbol / Binary over Xor·And) with structural equality and the tree-never-DAG invariant (no expression elimination during simplification)
 - [x] **ALG-02**: Expression folding/simplification that preserves input tree structure while reducing constants and redundant operations
-- [ ] **ALG-03**: F₂ vector representation — one expression per output bit over input coordinate bits, with vector-level ops
-- [ ] **ALG-04**: Coefficient matrices and matrix operations (multiply, add, transpose/reduce) over F₂ expressions
+- [x] **ALG-03**: F₂ vector representation — one expression per output bit over input coordinate bits, with vector-level ops
+- [x] **ALG-04**: Coefficient matrices and matrix operations (multiply, add, transpose/reduce) over F₂ expressions
 - [x] **ALG-05**: `go build ./...` and `go vet ./...` pass clean on the whole module
 
 ### Layout Maps
 
-- [ ] **MAP-01**: Access map — derive symbolic mapping from threadIdx coordinate bits to tile (M, N) offset via the F₂ interpreter
-- [ ] **MAP-02**: Swizzle map construction and composition with access maps
-- [ ] **MAP-03**: Stride map construction and composition with access maps
+- [x] **MAP-01**: Access map — derive symbolic mapping from threadIdx coordinate bits to tile (M, N) offset via the F₂ interpreter
+- [x] **MAP-02**: Swizzle map construction and composition with access maps
+- [x] **MAP-03**: Stride map construction and composition with access maps
 
 ### Testing
 
-- [ ] **TEST-01**: Table-driven stdlib unit tests covering internal/f2 (expressions, fold, vector, coefficient matrices)
-- [ ] **TEST-02**: Table-driven stdlib unit tests covering layout map types (access_map, swizzle_map, stride_map)
+- [x] **TEST-01**: Table-driven stdlib unit tests covering internal/f2 (expressions, fold, vector, coefficient matrices)
+- [x] **TEST-02**: Table-driven stdlib unit tests covering layout map types (access_map, swizzle_map, stride_map)
 
 ### Utilities
 
@@ -62,14 +62,14 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | ALG-01 | Phase 1 | Complete |
 | ALG-02 | Phase 1 | Complete |
-| ALG-03 | — (on-demand via /gsd:quick) | Pending |
-| ALG-04 | — (on-demand via /gsd:quick) | Pending |
+| ALG-03 | Quick 261113-gll | Complete |
+| ALG-04 | Quick 261113-gll | Complete |
 | ALG-05 | Phase 1 | Complete |
-| MAP-01 | — (on-demand via /gsd:quick) | Pending |
-| MAP-02 | — (on-demand via /gsd:quick) | Pending |
-| MAP-03 | — (on-demand via /gsd:quick) | Pending |
-| TEST-01 | — (on-demand via /gsd:quick) | Pending |
-| TEST-02 | — (on-demand via /gsd:quick) | Pending |
+| MAP-01 | Quick 261113-gll | Complete |
+| MAP-02 | Quick 261113-gll | Complete |
+| MAP-03 | Quick 261113-gll | Complete |
+| TEST-01 | Quick 261113-gll | Complete |
+| TEST-02 | Quick 261113-gll | Complete |
 | UTIL-01 | — (on-demand via /gsd:quick) | Pending |
 | UTIL-02 | — (on-demand via /gsd:quick) | Pending |
 | UTIL-03 | — (on-demand via /gsd:quick) | Pending |
