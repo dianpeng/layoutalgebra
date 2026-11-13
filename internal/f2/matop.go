@@ -11,14 +11,30 @@ func PermutationMatrix(
   lhs Vector,
   rhs Vector,
 ) (CoeffMat, error) {
-  check.Check(lhs.Rank() == rhs.Rank())
+  // rank mismatch is a caller error, not an invariant violation — report it
+  // through the error return instead of panicking (WR-09a)
+  if lhs.Rank() != rhs.Rank() {
+    return CoeffMat{}, fmt.Errorf(
+      "permutation matrix: rank mismatch %d vs %d",
+      lhs.Rank(),
+      rhs.Rank(),
+    )
+  }
   out := NewCoeffMatAllZero(lhs.Rank(), rhs.Rank())
+  used := make([]bool, lhs.Rank()) // each lhs column may be claimed once (WR-09b)
   for i := 0; i < rhs.Rank(); i++ {
     r := rhs.Index(i) // corresponding RHS expression
     found := false
     for j := 0; j < lhs.Rank(); j++ {
       l := lhs.Index(j)
       if r.IsEqual(l) {
+        if used[j] {
+          return CoeffMat{}, fmt.Errorf(
+            "permutation matrix: duplicate match at column %d",
+            j,
+          )
+        }
+        used[j] = true
         out.On(i, j) // transfer (i element => j position)
         found = true
         break
@@ -154,6 +170,7 @@ func RankConstMat(input CoeffMat) (int, error) {
 // a binary bit pattern. (a1, a2, ..., am) << k => (ak, ak+1, ..., am). The shift is
 // assumed to be unsigned integer shifts, ie bit left will be zeroed
 func ShiftMatrix(size int, k int) CoeffMat {
+  check.Check(k >= 0, "shift matrix: negative k %d", k)
   if k >= size {
     return NewCoeffMatAllZero(size, size)
   }

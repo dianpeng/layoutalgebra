@@ -124,27 +124,40 @@ func (self *CoeffMat) constValue(static Expr) F2 {
 }
 
 // checking weather the transmat is a permutation matrix. Notes, each row contains just
-// one 1
+// one 1, and each column is claimed by exactly one row (WR-03: column uniqueness)
 func (self *CoeffMat) IsPerm() bool {
   check.Check(self.IsConst())
 
+  seenCol := make([]bool, self.n)
   for i := 0; i < self.m; i++ {
     numOfOne := 0
+    colOfOne := -1
     for j := 0; j < self.n; j++ {
       v := self.constValue(self.v[i][j])
       if v {
         numOfOne++
+        colOfOne = j
       }
     }
     if numOfOne != 1 {
       return false
     }
+    if seenCol[colOfOne] {
+      return false // column already claimed by an earlier row
+    }
+    seenCol[colOfOne] = true
   }
   return true
 }
 
 func (self *CoeffMat) IsIdentity() bool {
   check.Check(self.IsConst())
+
+  // non-square matrices are never the identity; guards self.v[i][i] indexing
+  // past the row length when m > n (WR-04)
+  if self.m != self.n {
+    return false
+  }
 
   for i := 0; i < self.m; i++ {
 
