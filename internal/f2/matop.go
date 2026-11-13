@@ -6,7 +6,9 @@ import (
   "github.com/dianpeng/f2algebra/internal/check"
 )
 
-// Derive a permutation matrix A, s.t. A * rhs = lhs
+// Derive a permutation matrix A, s.t. A * lhs = rhs. Each rhs row claims the
+// first unused equal lhs column; a column claimed by an earlier rhs row is
+// skipped so duplicated coordinates can still map bijectively (WR-09).
 func PermutationMatrix(
   lhs Vector,
   rhs Vector,
@@ -29,10 +31,9 @@ func PermutationMatrix(
       l := lhs.Index(j)
       if r.IsEqual(l) {
         if used[j] {
-          return CoeffMat{}, fmt.Errorf(
-            "permutation matrix: duplicate match at column %d",
-            j,
-          )
+          // column claimed by an earlier rhs row — a later equal lhs column
+          // may still make this a valid permutation, so keep scanning
+          continue
         }
         used[j] = true
         out.On(i, j) // transfer (i element => j position)
