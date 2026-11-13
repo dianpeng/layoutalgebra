@@ -222,7 +222,7 @@ func (self *swizzler) Run(
     swizzleValue := NewBinary(                   // swizzle value
       Xor,
       existedValue,
-      freeVector.Index(freeBasisIdx[idx]), // free basis expression
+      input.Index(freeBasisIdx[idx]), // free basis expression
     )
     input.Set(inputIdx, swizzleValue) // replace with newly created swizzle value
   }

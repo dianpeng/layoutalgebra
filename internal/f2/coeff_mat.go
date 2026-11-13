@@ -113,6 +113,7 @@ func (self *CoeffMat) ToConst() (ConstMat, error) {
         return ConstMat{}, fmt.Errorf("not a constant matrix")
       }
     }
+    vv = append(vv, outRow)
   }
   return ConstMat{v: vv, m: self.m, n: self.n}, nil
 }

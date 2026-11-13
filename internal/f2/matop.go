@@ -3,7 +3,6 @@ package f2
 import (
   "fmt"
 
-  "github.com/dianpeng/f2algebra/internal/common"
   "github.com/dianpeng/f2algebra/internal/check"
 )
 
@@ -104,8 +103,9 @@ func GuassianEliminationConstMat(input CoeffMat) (EliminationResult, error) {
     if pivot == Zero {
       for j := cursorI + 1; j < m; j++ {
         if candidatePivot := raw[j][cursorJ]; candidatePivot != Zero {
-          pivot = candidatePivot
-          swapRow(cursorI, j)
+          pivot = candidatePivot // change pivot
+          swapRow(cursorI, j)    // swap the row index
+          lhsRow = raw[cursorI]  // pivot row now lives at cursorI after the swap
           break // symbol term will be treated as none zero, since we cannot know it
         }
       }
@@ -131,9 +131,7 @@ func GuassianEliminationConstMat(input CoeffMat) (EliminationResult, error) {
   }
 
   // get the rank
-  rankRow := m - cursorI
-  rankCol := n - cursorJ
-  rank := common.Select(rankRow < rankCol, rankRow, rankCol)
+  rank := cursorI
   basisIdx := permIdx[0: rank]
 
   // output

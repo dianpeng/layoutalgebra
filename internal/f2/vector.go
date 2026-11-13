@@ -96,8 +96,10 @@ func (self *Vector) ShiftL(k int, overflow bool) Vector {
   }
 
   for i := len(self.vec) - 1; i >= 0; i-- {
-    idx := len(self.vec) - i - 1
-    pos := len(vec) - k - idx
+    countI := len(self.vec) - 1 - i // starting from 0 forward counter/induction variable
+
+    // for each element reversely, always reserve K slots empty, ie K-lagging
+    pos := len(vec) - 1 - k - countI
     if pos < 0 {
       break
     }
@@ -161,6 +163,9 @@ func (self *Vector) doBasis(all []Expr) []*NodeVariable {
   for _, v := range dict {
     out = append(out, v)
   }
+  // deterministic order: callers (CoefficientMatrix column order, BasisName)
+  // rely on a stable variable sequence
+  sort.Slice(out, func(i, j int) bool { return out[i].Name() < out[j].Name() })
   return out
 }
 
@@ -419,25 +424,33 @@ func (self *Vector) extractLinearCoeffVector(expr Expr, order []string) ([]Expr,
   for _, vName := range order {
     c := exprMap[vName]
     if c != nil {
-      check.Check(c.Kind() == Binary)
       check.Check(c.Marker() == 1)
+      var coeffExpr Expr // coefficient of the variable
 
-      cBin := c.(*NodeBinary)
-      cL := cBin.L()
-      cR := cBin.R()
+      switch node := c.(type) {
+        case *NodeBinary:
+          // Variable node has its coefficient
+          //
+          // Our folding engine will always generate left-associative expression tree
+          // hence the top level R must be a leaf node, and it must be the inner most
+          // **variable**. Notes for multiple different coefficient terms, it should
+          // be resolved: ie (C1 * v) + (C2 * v) => (C1 + C2) * v
+          r := node.R()
+          check.Check(r.Kind() == Variable)
+          check.Check(r.(*NodeVariable).Name() == vName)
+          coeffExpr = node.L()
+          break
 
-      // The term is a linear term with V itself, it can only have scalar multiplication
-      // and also, due to the fold rules, the expression must be
-      //
-      // 1) left associative, variables pushed to the right
-      // 2) (C1 * v) + (C2 * v) => (C1 + C2) * v (normalization rule)
-      check.Check(cR.Kind() == Binary)
-      varExpr := cR.(*NodeBinary).R()
-      check.Check(varExpr.Kind() == Variable)
-      check.Check(varExpr.(*NodeVariable).Name() == vName)
+        case *NodeVariable:
+          check.Check(node.Name() == vName)
+          coeffExpr = NewConstOne()
+          break
 
-      // the cL is the expression we need here.
-      out = append(out, cL)
+        default:
+          check.Unreachable()
+          break
+      }
+      out = append(out, coeffExpr)
     } else {
       // 0 coefficient
       out = append(out, NewConstZero())
