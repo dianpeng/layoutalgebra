@@ -288,6 +288,30 @@ func (self *rewriteNormalization) Rewrite(node Expr) (Expr, error) {
         }
       }
     }
+
+    // (2) v + c * v => (1 + c) * v — bare-variable coefficient-1 merge.
+    // rewriteCommute does not normalize this order (a Mul is not fully
+    // static), so each operand order needs its own branch. The Mul side must
+    // carry a static coefficient over the SAME variable; anything else
+    // (different variable, non-static coefficient) stays untouched.
+    if bin.L().Kind() == Variable {
+      if rNode, ok := bin.R().(*NodeBinary); ok && rNode.Op() == Mul {
+        if IsStaticExprRecursive(rNode.L()) && rNode.R().IsEqual(bin.L()) {
+          coeff := NewBinary(Add, NewConstOne(), rNode.L())
+          return NewBinary(Mul, coeff, bin.L()), nil
+        }
+      }
+    }
+
+    // (3) c * v + v => (c + 1) * v — symmetric bare-variable merge.
+    if bin.R().Kind() == Variable {
+      if lNode, ok := bin.L().(*NodeBinary); ok && lNode.Op() == Mul {
+        if IsStaticExprRecursive(lNode.L()) && lNode.R().IsEqual(bin.R()) {
+          coeff := NewBinary(Add, lNode.L(), NewConstOne())
+          return NewBinary(Mul, coeff, bin.R()), nil
+        }
+      }
+    }
   }
   return nil, nil
 }
