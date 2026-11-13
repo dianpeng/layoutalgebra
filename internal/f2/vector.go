@@ -403,18 +403,18 @@ func (self *Vector) extractLinearCoeffVector(expr Expr, order []string) ([]Expr,
 			check.Check(len(nameSet) == 1)
 			name := nameSet[0]
 
-      // In theory, we should NOT see a varaible distributed into 2 different closures
-      // if we have a valid folding engine, it should handle it properly, but in case
-      // we have, we need to make compensation here. This guarantee correctness in a
-      // conservative way
-      if existed, hasExisted := exprMap[name]; hasExisted {
-        check.Check(parent != nil )
-        // cross variable closure node, which by design should never happen, so be
-        // conservative here
-        exprMap[name] = NewBinary(parent.Op(), existed, e)
-      } else {
-        exprMap[name] = e
-      }
+			// In theory, we should NOT see a varaible distributed into 2 different closures
+			// if we have a valid folding engine, it should handle it properly, but in case
+			// we have, we need to make compensation here. This guarantee correctness in a
+			// conservative way
+			if existed, hasExisted := exprMap[name]; hasExisted {
+				check.Check(parent != nil)
+				// cross variable closure node, which by design should never happen, so be
+				// conservative here
+				exprMap[name] = NewBinary(parent.Op(), existed, e)
+			} else {
+				exprMap[name] = e
+			}
 		} else {
 			// For this branch, we met a dangling constant term
 			// 1) If <expr> add <const-term> => affine transformation, none linear reject
