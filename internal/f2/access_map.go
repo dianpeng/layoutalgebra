@@ -20,16 +20,16 @@ package f2
 // --------------------------------------------------------------------------------------
 
 func MapAccess(
-  hardwareCoord Vector,
-  dataCoord Vector,
+	hardwareCoord Vector,
+	dataCoord Vector,
 ) (Vector, error) {
-  // (1) Using permutation matrix
-  permMatrix, err := PermutationMatrix(dataCoord, hardwareCoord)
-  if err != nil {
-    return Vector{}, err
-  }
+	// (1) Using permutation matrix
+	permMatrix, err := PermutationMatrix(dataCoord, hardwareCoord)
+	if err != nil {
+		return Vector{}, err
+	}
 
-  // (2) Apply the permutation matrix. Ie we get a parametrized data coord vector from
-  //     the hardware coordinator
-  return permMatrix.Apply(hardwareCoord), nil
+	// (2) Apply the permutation matrix. Ie we get a parametrized data coord vector from
+	//     the hardware coordinator
+	return permMatrix.Apply(hardwareCoord), nil
 }

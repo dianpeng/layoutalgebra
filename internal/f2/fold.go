@@ -1,9 +1,9 @@
 package f2
 
 import (
-  "fmt"
+	"fmt"
 
-  "github.com/dianpeng/f2algebra/internal/check"
+	"github.com/dianpeng/f2algebra/internal/check"
 )
 
 // --------------------------------------------------------------------------------------
@@ -23,39 +23,39 @@ import (
 const folderMaxIteration = 10000
 
 type rewriteRules interface {
-  Check(Expr) bool
-  Rewrite(Expr) (Expr, error)
+	Check(Expr) bool
+	Rewrite(Expr) (Expr, error)
 }
 
-type rewriteBinary struct {}
+type rewriteBinary struct{}
 
 type rewriteFold struct {
-  rewriteBinary
+	rewriteBinary
 }
 
 type rewriteCommute struct {
-  rewriteBinary
+	rewriteBinary
 }
 
 type rewriteIdempotent struct {
-  rewriteBinary
+	rewriteBinary
 }
 
 type rewriteReassociation struct {
-  rewriteBinary
+	rewriteBinary
 }
 
 type rewriteDistribution struct {
-  rewriteBinary
+	rewriteBinary
 }
 
 type rewriteNormalization struct {
-  rewriteBinary
+	rewriteBinary
 }
 
 // symbol normalization
 type rewriteSymbol struct {
-  rewriteBinary
+	rewriteBinary
 }
 
 // rewriteRuleOrder fixes the rule iteration order. The driver MUST iterate
@@ -65,59 +65,59 @@ type rewriteSymbol struct {
 // are stateless (they only embed the empty rewriteBinary), so shared instances
 // are safe.
 var rewriteRuleOrder = []rewriteRules{
-  &rewriteFold{},
-  &rewriteCommute{},
-  &rewriteIdempotent{},
-  &rewriteReassociation{},
-  &rewriteDistribution{},
-  &rewriteNormalization{},
-  &rewriteSymbol{},
+	&rewriteFold{},
+	&rewriteCommute{},
+	&rewriteIdempotent{},
+	&rewriteReassociation{},
+	&rewriteDistribution{},
+	&rewriteNormalization{},
+	&rewriteSymbol{},
 }
 
 func (self *rewriteBinary) Check(n Expr) bool {
-  _, ok := n.(*NodeBinary)
-  return ok
+	_, ok := n.(*NodeBinary)
+	return ok
 }
 
 // #1: constant fold
 func (self *rewriteFold) Rewrite(node Expr) (Expr, error) {
-  bin := node.(*NodeBinary)
-  l := bin.L()
-  r := bin.R()
-  // case #1: full constant, ie both are constants
-  if l.Kind() == Const && r.Kind() == Const {
-    lval := l.(*NodeConst).Int()
-    rval := r.(*NodeConst).Int()
-    if bin.Op() == Add {
-      if lval != rval {
-        return NewConstOne(), nil
-      }
-      return NewConstZero(), nil
-    } else {
-      if lval & rval != 0 {
-        return NewConstOne(), nil
-      }
-      return NewConstZero(), nil
-    }
-  }
+	bin := node.(*NodeBinary)
+	l := bin.L()
+	r := bin.R()
+	// case #1: full constant, ie both are constants
+	if l.Kind() == Const && r.Kind() == Const {
+		lval := l.(*NodeConst).Int()
+		rval := r.(*NodeConst).Int()
+		if bin.Op() == Add {
+			if lval != rval {
+				return NewConstOne(), nil
+			}
+			return NewConstZero(), nil
+		} else {
+			if lval&rval != 0 {
+				return NewConstOne(), nil
+			}
+			return NewConstZero(), nil
+		}
+	}
 
-  // case #2: lhs is constant
-  //
-  // 0 + ANY = ANY
-  // 1 * ANY = ANY
-  // 0 * ANY = 0
-  if l.Kind() == Const {
-    lval := l.(*NodeConst).Value()
-    if lval.IsZero() && bin.Op() == Add {
-      return r, nil
-    } else if lval.IsOne() && bin.Op() == Mul {
-      return r, nil
-    } else if lval.IsZero() && bin.Op() == Mul {
-      return NewConstZero(), nil
-    }
-  }
+	// case #2: lhs is constant
+	//
+	// 0 + ANY = ANY
+	// 1 * ANY = ANY
+	// 0 * ANY = 0
+	if l.Kind() == Const {
+		lval := l.(*NodeConst).Value()
+		if lval.IsZero() && bin.Op() == Add {
+			return r, nil
+		} else if lval.IsOne() && bin.Op() == Mul {
+			return r, nil
+		} else if lval.IsZero() && bin.Op() == Mul {
+			return NewConstZero(), nil
+		}
+	}
 
-  return nil, nil
+	return nil, nil
 }
 
 // #2: commutative expression
@@ -128,37 +128,37 @@ func (self *rewriteFold) Rewrite(node Expr) (Expr, error) {
 // --------------------------------------------------------------------------------------
 
 func (self *rewriteCommute) Rewrite(node Expr) (Expr, error) {
-  bin := node.(*NodeBinary)
+	bin := node.(*NodeBinary)
 
-  // case #1
-  if !IsStaticExpr(bin.L()) && IsStaticExpr(bin.R()) {
-    bin.Commute()
-    return bin, nil
-  }
+	// case #1
+	if !IsStaticExpr(bin.L()) && IsStaticExpr(bin.R()) {
+		bin.Commute()
+		return bin, nil
+	}
 
-  // case #2
-  if bin.L().Kind() == Binary {
-    if lNode := bin.L().(*NodeBinary); lNode.Op() == bin.Op() {
-      l1 := lNode.L()
-      l2 := lNode.R()
-      r  := bin.R()
-      op := bin.Op()
+	// case #2
+	if bin.L().Kind() == Binary {
+		if lNode := bin.L().(*NodeBinary); lNode.Op() == bin.Op() {
+			l1 := lNode.L()
+			l2 := lNode.R()
+			r := bin.R()
+			op := bin.Op()
 
-      if IsStaticExpr(l1) && !IsStaticExpr(l2) && IsStaticExpr(r) {
-        return NewBinary(
-          op,
-          NewBinary(
-            op,
-            l1,
-            r,
-          ),
-          l2,
-        ), nil
-      }
-    }
-  }
+			if IsStaticExpr(l1) && !IsStaticExpr(l2) && IsStaticExpr(r) {
+				return NewBinary(
+					op,
+					NewBinary(
+						op,
+						l1,
+						r,
+					),
+					l2,
+				), nil
+			}
+		}
+	}
 
-  return nil, nil
+	return nil, nil
 }
 
 // #3: idempotent
@@ -166,17 +166,17 @@ func (self *rewriteCommute) Rewrite(node Expr) (Expr, error) {
 // 1) x + x => 0
 // 2) x * x => x
 func (self *rewriteIdempotent) Rewrite(node Expr) (Expr, error) {
-  bin := node.(*NodeBinary)
-  l := bin.L()
-  r := bin.R()
-  if l.IsEqual(r) {
-    if bin.Op() == Add {
-      return NewConstZero(), nil
-    } else {
-      return l, nil
-    }
-  }
-  return nil, nil
+	bin := node.(*NodeBinary)
+	l := bin.L()
+	r := bin.R()
+	if l.IsEqual(r) {
+		if bin.Op() == Add {
+			return NewConstZero(), nil
+		} else {
+			return l, nil
+		}
+	}
+	return nil, nil
 }
 
 // --------------------------------------------------------------------------------------
@@ -191,47 +191,47 @@ func (self *rewriteIdempotent) Rewrite(node Expr) (Expr, error) {
 //
 // -------------------------------------------------------------------------------------
 func (self *rewriteReassociation) Rewrite(node Expr) (Expr, error) {
-  bin := node.(*NodeBinary)
-  binL := bin.L()
-  binR := bin.R()
+	bin := node.(*NodeBinary)
+	binL := bin.L()
+	binR := bin.R()
 
-  // checking case 1)
-  if binR.Kind() == Binary && binL.Kind() != Binary {
-    if rNode := binR.(*NodeBinary); bin.Op() == rNode.Op() {
-      return NewBinary(
-        bin.Op(),
-        NewBinary(bin.Op(), binL, rNode.L()),
-        rNode.R(),
-      ), nil
-    }
-  }
+	// checking case 1)
+	if binR.Kind() == Binary && binL.Kind() != Binary {
+		if rNode := binR.(*NodeBinary); bin.Op() == rNode.Op() {
+			return NewBinary(
+				bin.Op(),
+				NewBinary(bin.Op(), binL, rNode.L()),
+				rNode.R(),
+			), nil
+		}
+	}
 
-  // checking case 2)
-  if binL.Kind() == Binary && binR.Kind() == Binary {
-    lNode := binL.(*NodeBinary)
-    rNode := binR.(*NodeBinary)
-    if bin.Op() == lNode.Op() && bin.Op() == rNode.Op() {
-      a := lNode.L()
-      b := lNode.R()
-      c := rNode.L()
-      d := rNode.R()
-      return NewBinary(
-        bin.Op(),
-        NewBinary(
-          bin.Op(),
-          NewBinary(
-            bin.Op(),
-            a,
-            b,
-          ),
-          c,
-        ),
-        d,
-      ), nil
-    }
-  }
+	// checking case 2)
+	if binL.Kind() == Binary && binR.Kind() == Binary {
+		lNode := binL.(*NodeBinary)
+		rNode := binR.(*NodeBinary)
+		if bin.Op() == lNode.Op() && bin.Op() == rNode.Op() {
+			a := lNode.L()
+			b := lNode.R()
+			c := rNode.L()
+			d := rNode.R()
+			return NewBinary(
+				bin.Op(),
+				NewBinary(
+					bin.Op(),
+					NewBinary(
+						bin.Op(),
+						a,
+						b,
+					),
+					c,
+				),
+				d,
+			), nil
+		}
+	}
 
-  return nil, nil
+	return nil, nil
 }
 
 // Distribution law
@@ -239,26 +239,26 @@ func (self *rewriteReassociation) Rewrite(node Expr) (Expr, error) {
 // (1) (a + b) * c => (a * c) + (b * c): This is important for later linearization
 
 func (self *rewriteDistribution) Rewrite(node Expr) (Expr, error) {
-  bin := node.(*NodeBinary)
-  if bin.Op() == Mul {
-    binL := bin.L()
-    c := bin.R()
-    if binL.Kind() == Binary {
-      lNode := binL.(*NodeBinary)
-      a := lNode.L()
-      b := lNode.R()
-      // For this case we need to rull out the **normalization** rules, since it
-      // will form a cycle here. To address this, we just check to make sure a and
-      // b are binary, then we fold it. Otherwise we leave it as is
-      if !IsStaticExprRecursive(a) && !IsStaticExprRecursive(b) && lNode.Op() == Add {
-        lhs := NewBinary(Mul, a, c)
-        rhs := NewBinary(Mul, b, c)
-        return NewBinary(Add, lhs, rhs), nil
-      }
-    }
-  }
+	bin := node.(*NodeBinary)
+	if bin.Op() == Mul {
+		binL := bin.L()
+		c := bin.R()
+		if binL.Kind() == Binary {
+			lNode := binL.(*NodeBinary)
+			a := lNode.L()
+			b := lNode.R()
+			// For this case we need to rull out the **normalization** rules, since it
+			// will form a cycle here. To address this, we just check to make sure a and
+			// b are binary, then we fold it. Otherwise we leave it as is
+			if !IsStaticExprRecursive(a) && !IsStaticExprRecursive(b) && lNode.Op() == Add {
+				lhs := NewBinary(Mul, a, c)
+				rhs := NewBinary(Mul, b, c)
+				return NewBinary(Add, lhs, rhs), nil
+			}
+		}
+	}
 
-  return nil, nil
+	return nil, nil
 }
 
 // Normalization
@@ -266,32 +266,31 @@ func (self *rewriteDistribution) Rewrite(node Expr) (Expr, error) {
 // (1) S1 * x + S2 * x => (S1 + S2) * x
 
 func (self *rewriteNormalization) Rewrite(node Expr) (Expr, error) {
-  bin := node.(*NodeBinary)
-  if bin.Op() == Add {
-    if bin.L().Kind() == Binary && bin.R().Kind() == Binary {
-      binL := bin.L().(*NodeBinary)
-      binR := bin.R().(*NodeBinary)
-      if binL.Op() == Mul && binR.Op() == Mul {
-        // a * b + c * d
-        a := binL.L()
-        b := binL.R()
-        c := binR.L()
-        d := binR.R()
+	bin := node.(*NodeBinary)
+	if bin.Op() == Add {
+		if bin.L().Kind() == Binary && bin.R().Kind() == Binary {
+			binL := bin.L().(*NodeBinary)
+			binR := bin.R().(*NodeBinary)
+			if binL.Op() == Mul && binR.Op() == Mul {
+				// a * b + c * d
+				a := binL.L()
+				b := binL.R()
+				c := binR.L()
+				d := binR.R()
 
-        // notes we will have to use Recursive for ad-hoc normalization here. Basically
-        // any constant combination of a expression trees will lead to constancy. A
-        // better approach is to perform a data flow analysis to assert expression's
-        // constantcy, hence we can sure that we just reassociate it directly. 
-        if IsStaticExprRecursive(a) && IsStaticExprRecursive(c) && b.IsEqual(d) {
-          coeff := NewBinary(Add, a, c)
-          return NewBinary(Mul, coeff, b), nil
-        }
-      }
-    }
-  }
-  return nil, nil
+				// notes we will have to use Recursive for ad-hoc normalization here. Basically
+				// any constant combination of a expression trees will lead to constancy. A
+				// better approach is to perform a data flow analysis to assert expression's
+				// constantcy, hence we can sure that we just reassociate it directly.
+				if IsStaticExprRecursive(a) && IsStaticExprRecursive(c) && b.IsEqual(d) {
+					coeff := NewBinary(Add, a, c)
+					return NewBinary(Mul, coeff, b), nil
+				}
+			}
+		}
+	}
+	return nil, nil
 }
-
 
 // Symbol
 //
@@ -309,56 +308,56 @@ func (self *rewriteNormalization) Rewrite(node Expr) (Expr, error) {
 // It is possible to implement something like e-graph to proove conguruence, we may add
 // it in the future.
 func (self *rewriteSymbol) Rewrite(node Expr) (Expr, error) {
-  bin := node.(*NodeBinary)
-  l := bin.L()
-  r := bin.R()
+	bin := node.(*NodeBinary)
+	l := bin.L()
+	r := bin.R()
 
-  // 1) push const to lhs and symbol to rhs
-  if IsStaticExpr(l) && IsStaticExpr(r) {
-    if l.Kind() == Symbol && r.Kind() == Const {
-      bin.Commute()
-    }
-  }
+	// 1) push const to lhs and symbol to rhs
+	if IsStaticExpr(l) && IsStaticExpr(r) {
+		if l.Kind() == Symbol && r.Kind() == Const {
+			bin.Commute()
+		}
+	}
 
-  // lexical order of symbols
-  //
-  // (1): (sym1 sym2)
-  // (2): ((const sym1) sym2)
+	// lexical order of symbols
+	//
+	// (1): (sym1 sym2)
+	// (2): ((const sym1) sym2)
 
-  // case #1
-  if l.Kind() == Symbol && r.Kind() == Symbol {
-    lSym := l.(*NodeSymbol)
-    rSym := r.(*NodeSymbol)
-    if lSym.Name() > rSym.Name() {
-      bin.Commute()
-      return bin, nil
-    }
-  }
+	// case #1
+	if l.Kind() == Symbol && r.Kind() == Symbol {
+		lSym := l.(*NodeSymbol)
+		rSym := r.(*NodeSymbol)
+		if lSym.Name() > rSym.Name() {
+			bin.Commute()
+			return bin, nil
+		}
+	}
 
-  // case #2
-  if l.Kind() == Binary && r.Kind() == Symbol {
-    lNode := l.(*NodeBinary)
-    l0 := lNode.L()
-    l1 := lNode.R()
-    r := bin.R()
-    if bin.Op() == lNode.Op() && l0.Kind() == Const && l1.Kind() == Symbol && r.Kind() == Symbol {
-      l1Sym := l1.(*NodeSymbol)
-      rSym := r.(*NodeSymbol)
-      if l1Sym.Name() > rSym.Name() {
-        return NewBinary(
-          bin.Op(),
-          NewBinary(
-            lNode.Op(),
-            l0,
-            r,
-          ),
-          l1,
-        ), nil
-      }
-    }
-  }
+	// case #2
+	if l.Kind() == Binary && r.Kind() == Symbol {
+		lNode := l.(*NodeBinary)
+		l0 := lNode.L()
+		l1 := lNode.R()
+		r := bin.R()
+		if bin.Op() == lNode.Op() && l0.Kind() == Const && l1.Kind() == Symbol && r.Kind() == Symbol {
+			l1Sym := l1.(*NodeSymbol)
+			rSym := r.(*NodeSymbol)
+			if l1Sym.Name() > rSym.Name() {
+				return NewBinary(
+					bin.Op(),
+					NewBinary(
+						lNode.Op(),
+						l0,
+						r,
+					),
+					l1,
+				), nil
+			}
+		}
+	}
 
-  return nil, nil
+	return nil, nil
 }
 
 // -------------------------------------------------------------------------------------
@@ -366,78 +365,78 @@ func (self *rewriteSymbol) Rewrite(node Expr) (Expr, error) {
 // -------------------------------------------------------------------------------------
 
 type folder struct {
-  maxBound int
-  current []Replacement
+	maxBound int
+	current  []Replacement
 }
 
 func (self *folder) rewrite(expr Expr) error {
-  didReplace := false
-  for _, r := range rewriteRuleOrder {
-    if r.Check(expr) {
-      replacement, err := r.Rewrite(expr)
-      if err != nil {
-        return err
-      }
-      if replacement != nil {
-        self.current = append(self.current, Replacement{
-          Old: expr,
-          New: replacement,
-        })
-        didReplace = true
-        break
-      }
-    }
-  }
+	didReplace := false
+	for _, r := range rewriteRuleOrder {
+		if r.Check(expr) {
+			replacement, err := r.Rewrite(expr)
+			if err != nil {
+				return err
+			}
+			if replacement != nil {
+				self.current = append(self.current, Replacement{
+					Old: expr,
+					New: replacement,
+				})
+				didReplace = true
+				break
+			}
+		}
+	}
 
-  if !didReplace {
-    // visiting the expression recursively if not replaced
-    switch n := expr.(type) {
-      case *NodeBinary:
-        if err := self.rewrite(n.L()); err != nil {
-          return err
-        }
-        if err := self.rewrite(n.R()); err != nil {
-          return err
-        }
-        break
-      default:
-        break
-    }
-  }
-  return nil
+	if !didReplace {
+		// visiting the expression recursively if not replaced
+		switch n := expr.(type) {
+		case *NodeBinary:
+			if err := self.rewrite(n.L()); err != nil {
+				return err
+			}
+			if err := self.rewrite(n.R()); err != nil {
+				return err
+			}
+			break
+		default:
+			break
+		}
+	}
+	return nil
 }
 
 func (self *folder) doRun(expr Expr) ([]Replacement, error) {
-  self.current = nil // reset current replacement queue
-  if err := self.rewrite(expr); err != nil {
-    return nil, err // rewrite rule errors must not be swallowed (WR-10a)
-  }
-  return self.current, nil
+	self.current = nil // reset current replacement queue
+	if err := self.rewrite(expr); err != nil {
+		return nil, err // rewrite rule errors must not be swallowed (WR-10a)
+	}
+	return self.current, nil
 }
 
 func (self *folder) run(expr Expr) Expr {
-  var replacementQueue []Replacement
-  var err error
-  for i := 0; i < self.maxBound; i++ {
-    replacementQueue, err = self.doRun(expr)
-    if err != nil {
-      check.Bug(fmt.Sprintf("fold: rewrite error: %v", err))
-    }
-    if len(replacementQueue) == 0 {
-      break
-    }
-    expr = Replace(expr, replacementQueue)
-  }
-  // A non-empty queue after the loop means the cap was exhausted before
-  // reaching a fixpoint — the result would be a silent non-canonical
-  // expression, which defeats the engine's entire purpose (WR-10b)
-  if len(replacementQueue) != 0 {
-    check.Bug(fmt.Sprintf("fold: iteration cap %d exhausted before canonical form", self.maxBound))
-  }
-  return expr
+	var replacementQueue []Replacement
+	var err error
+	for i := 0; i < self.maxBound; i++ {
+		replacementQueue, err = self.doRun(expr)
+		if err != nil {
+			check.Bug(fmt.Sprintf("fold: rewrite error: %v", err))
+		}
+		if len(replacementQueue) == 0 {
+			break
+		}
+		expr = Replace(expr, replacementQueue)
+	}
+	// A non-empty queue after the loop means the cap was exhausted before
+	// reaching a fixpoint — the result would be a silent non-canonical
+	// expression, which defeats the engine's entire purpose (WR-10b)
+	if len(replacementQueue) != 0 {
+		check.Bug(fmt.Sprintf("fold: iteration cap %d exhausted before canonical form", self.maxBound))
+	}
+	return expr
 }
 
 func Fold(expr Expr) Expr {
-  f := &folder{maxBound: folderMaxIteration}
-  return f.run(expr)
+	f := &folder{maxBound: folderMaxIteration}
+	return f.run(expr)
 }

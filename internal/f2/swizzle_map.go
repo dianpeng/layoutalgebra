@@ -1,11 +1,11 @@
 package f2
 
 import (
-  "fmt"
-  "strings"
+	"fmt"
+	"strings"
 
-  "github.com/dianpeng/f2algebra/internal/common"
-  "github.com/dianpeng/f2algebra/internal/check"
+	"github.com/dianpeng/f2algebra/internal/check"
+	"github.com/dianpeng/f2algebra/internal/common"
 )
 
 // Swizzle bank analysis against the the F2 vector
@@ -18,23 +18,23 @@ import (
 // (2, 5), which means skip the LSB 2 bits, and in range [2, 7), pinned down as the
 // bank conflicts range.
 var SwizzleErrorUnknownBasis = fmt.Errorf("swizzle error: basis is unknown to us")
-var SwizzleErrorSaturated    = fmt.Errorf("swizzle error: optimization is saturated")
+var SwizzleErrorSaturated = fmt.Errorf("swizzle error: optimization is saturated")
 var SwizzleErrorNoFreeDegree = fmt.Errorf("swizzle error: no free degree")
 
 type Bank struct {
-  Skip int
-  Range int
-  VariablePrefix string // which variable prefix will be assumed to be induction variable
+	Skip           int
+	Range          int
+	VariablePrefix string // which variable prefix will be assumed to be induction variable
 }
 
 type swizzleVectorInfo struct {
-  Rank int         // rank of the vector's coefficient matrix
-  BasisIndex []int // basis index in its coefficient matrix
-  Coeff CoeffMat   // coefficient matrix object
-  U     CoeffMat   // upper triangle
+	Rank       int      // rank of the vector's coefficient matrix
+	BasisIndex []int    // basis index in its coefficient matrix
+	Coeff      CoeffMat // coefficient matrix object
+	U          CoeffMat // upper triangle
 }
 
-type swizzler struct {}
+type swizzler struct{}
 
 // NameBelong reports whether name begins with the given variable prefix at a
 // family boundary (WR-13). After the prefix, the remainder must be empty,
@@ -42,60 +42,60 @@ type swizzler struct {}
 // not a digit. A digit continuing a digit-ending prefix belongs to a different
 // family (e.g. "thr1" must not match "thr10_0").
 func NameBelong(name, prefix string) bool {
-  if !strings.HasPrefix(name, prefix) {
-    return false
-  }
-  rest := name[len(prefix):]
-  if rest == "" {
-    return true
-  }
-  if rest[0] == '_' {
-    return true
-  }
-  if rest[0] >= '0' && rest[0] <= '9' {
-    last := prefix[len(prefix)-1]
-    return !(last >= '0' && last <= '9')
-  }
-  return false
+	if !strings.HasPrefix(name, prefix) {
+		return false
+	}
+	rest := name[len(prefix):]
+	if rest == "" {
+		return true
+	}
+	if rest[0] == '_' {
+		return true
+	}
+	if rest[0] >= '0' && rest[0] <= '9' {
+		last := prefix[len(prefix)-1]
+		return !(last >= '0' && last <= '9')
+	}
+	return false
 }
 
 // BelongVariableNameFamily reports whether any variable in the expression
 // tree belongs to the given variable name prefix family.
 func BelongVariableNameFamily(e Expr, prefix string) bool {
-  found := false
-  Visit(
-    e,
-    func(val Expr) bool {
-      _, ok := val.(*NodeVariable)
-      return ok
-    },
-    func(v Expr) error {
-      if NameBelong(v.(*NodeVariable).Name(), prefix) {
-        found = true
-      }
-      return nil
-    },
-  )
-  return found
+	found := false
+	Visit(
+		e,
+		func(val Expr) bool {
+			_, ok := val.(*NodeVariable)
+			return ok
+		},
+		func(v Expr) error {
+			if NameBelong(v.(*NodeVariable).Name(), prefix) {
+				found = true
+			}
+			return nil
+		},
+	)
+	return found
 }
 
 func (self *swizzler) vectorInfo(vec Vector) (swizzleVectorInfo, error) {
-  if coeffMat, err := vec.CoeffMatAll(); err != nil {
-    return swizzleVectorInfo{}, err
-  } else if !coeffMat.IsConst() {
-    return swizzleVectorInfo{}, SwizzleErrorUnknownBasis // SHOULD never happen
-  } else {
-    if result, err := GuassianEliminationConstMat(coeffMat); err != nil {
-      return swizzleVectorInfo{}, err
-    } else {
-      return swizzleVectorInfo{
-        Rank: result.Rank,
-        BasisIndex: result.BasisIndex,
-        Coeff: coeffMat,
-        U: result.Matrix,
-      }, nil
-    }
-  }
+	if coeffMat, err := vec.CoeffMatAll(); err != nil {
+		return swizzleVectorInfo{}, err
+	} else if !coeffMat.IsConst() {
+		return swizzleVectorInfo{}, SwizzleErrorUnknownBasis // SHOULD never happen
+	} else {
+		if result, err := GuassianEliminationConstMat(coeffMat); err != nil {
+			return swizzleVectorInfo{}, err
+		} else {
+			return swizzleVectorInfo{
+				Rank:       result.Rank,
+				BasisIndex: result.BasisIndex,
+				Coeff:      coeffMat,
+				U:          result.Matrix,
+			}, nil
+		}
+	}
 }
 
 // --------------------------------------------------------------------------------------
@@ -108,7 +108,8 @@ func (self *swizzler) vectorInfo(vec Vector) (swizzleVectorInfo, error) {
 //
 // Goal: derive a new Vector, s.t it avoids bank conflicts as much as possible
 //  - Bank #: input_vector >> Bank.Skip and the last Bank.Range bits, denoted as bank bits
-//  - bank variables: a series of bit variables that decide the parallism that contribute to bank conflicts
+//  - bank variables: a series of bit variables that decide the parallism that contribute
+//    to bank conflicts
 //    - On Nvidia, it is thread bits per warp, or lane bit variable
 //      - lane[k] = (threadIdx.x >> k) & 1 (0 <= k < 5)
 //    - It all represnted as variable in our parametrized expression tree
@@ -118,10 +119,13 @@ func (self *swizzler) vectorInfo(vec Vector) (swizzleVectorInfo, error) {
 //  - If R == Bank.Range, which means fully saturated, ie no room for performance bump
 //  - The can be optimized size for bank bits are Rbest = Bank.Range - R
 //  - Otherwise, we start to search other basis **besides the bank rank bits**
-//    - Denoted as free bit vector. Free bit vector MUST also based on lane bit variable as basis
+//    - Denoted as free bit vector. Free bit vector MUST also based on lane bit variable
+//      as basis
 //  - Denote rank of the free bit vector as Rfree
-//  - The maximimu allowed swizzle dimenion, # of dimension can be optimized is min(Rfree, Rbest)
-//  - For each such dimension, we map to a basis found in free vector, and swizzle the existed value against it
+//  - The maximimu allowed swizzle dimenion, # of dimension can be optimized is
+//    min(Rfree, Rbest)
+//  - For each such dimension, we map to a basis found in free vector, and swizzle the
+//    existed value against it
 //
 // The transformation is essentially a matraix M
 //
@@ -139,132 +143,132 @@ func (self *swizzler) vectorInfo(vec Vector) (swizzleVectorInfo, error) {
 // --------------------------------------------------------------------------------------
 
 func (self *swizzler) Run(
-  bank Bank, // range of banks
-  input Vector,        // input vectors
+	bank Bank, // range of banks
+	input Vector, // input vectors
 ) (Vector, error) {
-  check.Check(bank.Skip >= 0)
-  check.Check(bank.Range >= 1)
+	check.Check(bank.Skip >= 0)
+	check.Check(bank.Range >= 1)
 
-  // bank bits occupy [Skip, Skip+Range) — reject configs that overrun the
-  // input before slicing (WR-07)
-  if bank.Skip + bank.Range > input.Size() {
-    return Vector{}, fmt.Errorf(
-      "swizzle error: bank skip+range (%d+%d) exceeds input size %d",
-      bank.Skip,
-      bank.Range,
-      input.Size(),
-    )
-  }
+	// bank bits occupy [Skip, Skip+Range) — reject configs that overrun the
+	// input before slicing (WR-07)
+	if bank.Skip+bank.Range > input.Size() {
+		return Vector{}, fmt.Errorf(
+			"swizzle error: bank skip+range (%d+%d) exceeds input size %d",
+			bank.Skip,
+			bank.Range,
+			input.Size(),
+		)
+	}
 
-  // (1) obtain a slice of vector for bank bits analysis
-  bankBits := input.Slice(bank.Skip, bank.Skip + bank.Range)
-  bankRank := -1
-  bankBasis := []int{} // bank's basis index
-  bankNS:= []int{}     // bank's nullspace index
+	// (1) obtain a slice of vector for bank bits analysis
+	bankBits := input.Slice(bank.Skip, bank.Skip+bank.Range)
+	bankRank := -1
+	bankBasis := []int{} // bank's basis index
+	bankNS := []int{}    // bank's nullspace index
 
-  // ensure the bank bits ONLY contain allowed variable as basis, otherwise, not supported
-  for _, name := range bankBits.BasisName() {
-    if !NameBelong(name, bank.VariablePrefix) {
-      // contains basis which is not known to us
-      return Vector{}, SwizzleErrorUnknownBasis
-    }
-  }
+	// ensure the bank bits ONLY contain allowed variable as basis, otherwise, not supported
+	for _, name := range bankBits.BasisName() {
+		if !NameBelong(name, bank.VariablePrefix) {
+			// contains basis which is not known to us
+			return Vector{}, SwizzleErrorUnknownBasis
+		}
+	}
 
-  // checking weather the bankBits is fully ranked, if so, we cannot do better by swizzle
-  if result, err := self.vectorInfo(bankBits); err != nil {
-    return Vector{}, err
-  } else {
-    bankRank = result.Rank
-    bankBasis = result.BasisIndex // basis index
-    for i := 0; i < bankBits.Size(); i++ {
-      found := false
-      for _, j := range bankBasis {
-        if i == j {
-          found = true
-          break
-        }
-      }
-      if !found {
-        bankNS = append(bankNS, i)
-      }
-    }
+	// checking weather the bankBits is fully ranked, if so, we cannot do better by swizzle
+	if result, err := self.vectorInfo(bankBits); err != nil {
+		return Vector{}, err
+	} else {
+		bankRank = result.Rank
+		bankBasis = result.BasisIndex // basis index
+		for i := 0; i < bankBits.Size(); i++ {
+			found := false
+			for _, j := range bankBasis {
+				if i == j {
+					found = true
+					break
+				}
+			}
+			if !found {
+				bankNS = append(bankNS, i)
+			}
+		}
 
-    // 4 foundational linear aglebra theorm
-    check.Check(len(bankNS) == bankBits.Rank() - len(bankBasis))
-  }
+		// 4 foundational linear aglebra theorm
+		check.Check(len(bankNS) == bankBits.Rank()-len(bankBasis))
+	}
 
-  // checking bank rank against possible maximum permutation
-  if bankRank == bank.Range {
-    // Already satifisied the optimal situation, do nothing
-    return Vector{}, SwizzleErrorSaturated
-  }
+	// checking bank rank against possible maximum permutation
+	if bankRank == bank.Range {
+		// Already satifisied the optimal situation, do nothing
+		return Vector{}, SwizzleErrorSaturated
+	}
 
-  // (2) now, we need to finding out the dimension that CAN BE XORed in order to perform
-  //     swizzle change in the iteration/permutation space. To address this issue, one
-  //     simple way is to chase the bit range (bank.Range, ...) and hit a dimension with
-  //     full variable name, (ie basis) that from the same variable family
-  freeIdx := []int{}
-  for i := bank.Skip + bank.Range; i < input.Size(); i++ {
-    if dimension := input.Index(i); BelongVariableNameFamily(
-      dimension,
-      bank.VariablePrefix,
-    ) {
-      freeIdx = append(freeIdx, i)
-    }
-  }
+	// (2) now, we need to finding out the dimension that CAN BE XORed in order to perform
+	//     swizzle change in the iteration/permutation space. To address this issue, one
+	//     simple way is to chase the bit range (bank.Range, ...) and hit a dimension with
+	//     full variable name, (ie basis) that from the same variable family
+	freeIdx := []int{}
+	for i := bank.Skip + bank.Range; i < input.Size(); i++ {
+		if dimension := input.Index(i); BelongVariableNameFamily(
+			dimension,
+			bank.VariablePrefix,
+		) {
+			freeIdx = append(freeIdx, i)
+		}
+	}
 
-  // no free dimension exists — report it instead of panicking inside
-  // NewCoeffMat's m > 0 check downstream (WR-06)
-  if len(freeIdx) == 0 {
-    return Vector{}, SwizzleErrorNoFreeDegree
-  }
+	// no free dimension exists — report it instead of panicking inside
+	// NewCoeffMat's m > 0 check downstream (WR-06)
+	if len(freeIdx) == 0 {
+		return Vector{}, SwizzleErrorNoFreeDegree
+	}
 
-  // (3) gather a new vector and check weather its rank matches or not
-  freeVector := input.Gather(freeIdx)
-  freeRank := -1
-  freeBasisIdx := []int{}
-  result, err := self.vectorInfo(freeVector)
-  if err != nil {
-    return Vector{}, err
-  }
-  if result.Rank == 0 {
-    // We cannot find any free degree for swizzle bank permutation
-    return Vector{}, SwizzleErrorNoFreeDegree
-  }
-  // Using freeIdx to convert it back to freeVector space
-  for _, bIdx := range result.BasisIndex {
-    freeBasisIdx = append(freeBasisIdx, freeIdx[bIdx])
-  }
-  freeRank = result.Rank
+	// (3) gather a new vector and check weather its rank matches or not
+	freeVector := input.Gather(freeIdx)
+	freeRank := -1
+	freeBasisIdx := []int{}
+	result, err := self.vectorInfo(freeVector)
+	if err != nil {
+		return Vector{}, err
+	}
+	if result.Rank == 0 {
+		// We cannot find any free degree for swizzle bank permutation
+		return Vector{}, SwizzleErrorNoFreeDegree
+	}
+	// Using freeIdx to convert it back to freeVector space
+	for _, bIdx := range result.BasisIndex {
+		freeBasisIdx = append(freeBasisIdx, freeIdx[bIdx])
+	}
+	freeRank = result.Rank
 
-  // (4) now we know that free vector contains dimension CAN BE used for combination
-  //     for swizzle bank.
-  //
-  //     Basically, for each basis, we can permute each one with an XOR
-  readyToBeSwizzledDimensionSize := common.Select(
-    len(bankNS) < freeRank,
-    len(bankNS),
-    freeRank,
-  )
+	// (4) now we know that free vector contains dimension CAN BE used for combination
+	//     for swizzle bank.
+	//
+	//     Basically, for each basis, we can permute each one with an XOR
+	readyToBeSwizzledDimensionSize := common.Select(
+		len(bankNS) < freeRank,
+		len(bankNS),
+		freeRank,
+	)
 
-  // perform swizzel directly
-  for idx, nsIdx := range bankNS {
-    if idx >= readyToBeSwizzledDimensionSize {
-      break
-    }
-    inputIdx := bank.Skip + nsIdx                // index in input vector space
-    existedValue := input.Index(inputIdx)        // existed value, which does not change
-    swizzleValue := NewBinary(                   // swizzle value
-      Xor,
-      existedValue,
-      input.Index(freeBasisIdx[idx]), // free basis expression
-    )
-    input.Set(inputIdx, swizzleValue) // replace with newly created swizzle value
-  }
-  return input, nil
+	// perform swizzel directly
+	for idx, nsIdx := range bankNS {
+		if idx >= readyToBeSwizzledDimensionSize {
+			break
+		}
+		inputIdx := bank.Skip + nsIdx         // index in input vector space
+		existedValue := input.Index(inputIdx) // existed value, which does not change
+		swizzleValue := NewBinary(            // swizzle value
+			Xor,
+			existedValue,
+			input.Index(freeBasisIdx[idx]), // free basis expression
+		)
+		input.Set(inputIdx, swizzleValue) // replace with newly created swizzle value
+	}
+	return input, nil
 }
 
 func SwizzleMap(bank Bank, input Vector) (Vector, error) {
-  sw := swizzler{}
-  return sw.Run(bank, input)
+	sw := swizzler{}
+	return sw.Run(bank, input)
 }

@@ -14,17 +14,17 @@ func IsPowerOf2[T Integer](n T) bool {
 }
 
 func Repeat[T any](N int, val T) []T {
-  out := make([]T, 0, N)
-  for i := 0; i < N; i++ {
-    out = append(out, val)
-  }
-  return out
+	out := make([]T, 0, N)
+	for i := 0; i < N; i++ {
+		out = append(out, val)
+	}
+	return out
 }
 
 func Select[T any](cond bool, lhs, rhs T) T {
-  if cond {
-    return lhs
-  } else {
-    return rhs
-  }
+	if cond {
+		return lhs
+	} else {
+		return rhs
+	}
 }
