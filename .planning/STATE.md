@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-11-12)
 Phase: 01
 Plan: Not started
 Status: Milestone complete
-Last activity: 2026-11-13 - Completed quick task 261113-j8r: Expr interface String() promotion (native fmt dump)
+Last activity: 2026-11-13 - Completed quick task 261113-jpv: fold normalization bare-variable merge (x + S*x certificate soundness)
 
 Progress: [██████████] 100%
 
@@ -84,6 +84,7 @@ Recent decisions affecting current work:
 | 261113-gll | Fix remaining review warnings WR-01..WR-15 in internal/f2 and add comprehensive F2 algebra test coverage for layout-calculation pipelines | 2026-11-13 | e92ea9b | Verified | [261113-gll-fix-remaining-review-warnings-wr-01-wr-1](./quick/261113-gll-fix-remaining-review-warnings-wr-01-wr-1/) |
 | 261113-ir0 | Expression/matrix/vector dump utilities for viewing pipeline transformations | 2026-11-13 | 93dd400 | Verified | [261113-ir0-add-print-dump-methods-for-all-expressio](./quick/261113-ir0-add-print-dump-methods-for-all-expressio/) |
 | 261113-j8r | Expr interface String() promotion — native fmt dump, dumpExpr dispatcher removed | 2026-11-13 | bbe4411 | Complete | [261113-j8r-add-string-to-the-expr-interface-so-expr](./quick/261113-j8r-add-string-to-the-expr-interface-so-expr/) |
+| 261113-jpv | Fold normalization bare-variable merge — fixes x + S*x silent coefficient drop; certificate-soundness restored | 2026-11-13 | d2b8fb3 | Verified | [261113-jpv-extend-fold-normalization-rule-to-cover-](./quick/261113-jpv-extend-fold-normalization-rule-to-cover-/) |
 
 ## Session Continuity
 
