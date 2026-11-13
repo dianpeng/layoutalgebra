@@ -9,8 +9,9 @@ import (
 //
 // Human readable, diff friendly dump facilities for the F2 algebra.
 //
-// (1) fmt.Stringer on F2 and on every expression node type: infix render, fully
-//     parenthesized at every binary node, so any tree reads unambiguously.
+// (1) String() is part of the Expr interface (and fmt.Stringer on F2): infix
+//     render, fully parenthesized at every binary node, so any tree reads
+//     unambiguously and any Expr-typed value prints via fmt directly.
 // (2) DumpPrefix: operator-first fully parenthesized prefix render of any Expr.
 // (3) Dump() on Vector/CoeffMat/ConstMat: one line per bit / per matrix row, so
 //     successive pipeline stages (hw bits -> MapAccess -> StrideMap -> CoeffMatAll
@@ -28,23 +29,6 @@ func dumpOpSym(op int) string {
     return "^"
   }
   return "*"
-}
-
-// dumpExpr renders any Expr through its concrete node type; the Expr interface
-// itself does not carry String(), so the type switch dispatches for it. The
-// algebra has exactly four node kinds (see expr.go), covering every Expr.
-func dumpExpr(e Expr) string {
-  switch node := e.(type) {
-  case *NodeVariable:
-    return node.String()
-  case *NodeConst:
-    return node.String()
-  case *NodeSymbol:
-    return node.String()
-  case *NodeBinary:
-    return node.String()
-  }
-  return ""
 }
 
 // String renders the scalar as "0" or "1".
@@ -72,7 +56,7 @@ func (self *NodeConst) String() string {
 // String renders a binary node fully parenthesized in infix form, eg
 // Xor(a, Mul(b, c)) renders "(a ^ (b * c))".
 func (self *NodeBinary) String() string {
-  return "(" + dumpExpr(self.L()) + " " + dumpOpSym(self.Op()) + " " + dumpExpr(self.R()) + ")"
+  return "(" + self.L().String() + " " + dumpOpSym(self.Op()) + " " + self.R().String() + ")"
 }
 
 // DumpPrefix renders any expression tree in operator-first fully parenthesized
@@ -82,7 +66,7 @@ func DumpPrefix(e Expr) string {
   if bin, ok := e.(*NodeBinary); ok {
     return "(" + dumpOpSym(bin.Op()) + " " + DumpPrefix(bin.L()) + " " + DumpPrefix(bin.R()) + ")"
   }
-  return dumpExpr(e)
+  return e.String()
 }
 
 // Dump renders the vector as one "bit i: <expr>" line per bit index, infix
@@ -93,7 +77,7 @@ func (self *Vector) Dump() string {
     b.WriteString("bit ")
     b.WriteString(strconv.Itoa(i))
     b.WriteString(": ")
-    b.WriteString(dumpExpr(self.Index(i)))
+    b.WriteString(self.Index(i).String())
     b.WriteString("\n")
   }
   return b.String()
@@ -110,7 +94,7 @@ func (self *CoeffMat) Dump() string {
       if j > 0 {
         b.WriteString(" ")
       }
-      b.WriteString(dumpExpr(self.Index(i, j)))
+      b.WriteString(self.Index(i, j).String())
     }
     b.WriteString("]\n")
   }
