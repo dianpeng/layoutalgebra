@@ -1,6 +1,8 @@
 package f2
 
 import (
+  "fmt"
+
   "github.com/dianpeng/f2algebra/internal/check"
 )
 
@@ -21,5 +23,9 @@ func StrideMap(
   dtypeSize int,    // power of sizeof dtype, must be 0/1/2
 ) (Vector, error) {
   check.Check(len(tileShape) == input.Size())
+  // dtypeSize is the power of the dtype size and must be 0/1/2 (WR-12)
+  if dtypeSize < 0 || dtypeSize > 2 {
+    return Vector{}, fmt.Errorf("stride map: dtypeSize must be 0..2, got %d", dtypeSize)
+  }
   return input.ShiftL(dtypeSize, true), nil
 }

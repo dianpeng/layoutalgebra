@@ -36,9 +36,27 @@ type swizzleVectorInfo struct {
 
 type swizzler struct {}
 
-// NameBelong reports whether name begins with the given variable prefix.
+// NameBelong reports whether name begins with the given variable prefix at a
+// family boundary (WR-13). After the prefix, the remainder must be empty,
+// begin with '_', or begin with a digit when the prefix's last character is
+// not a digit. A digit continuing a digit-ending prefix belongs to a different
+// family (e.g. "thr1" must not match "thr10_0").
 func NameBelong(name, prefix string) bool {
-  return strings.HasPrefix(name, prefix)
+  if !strings.HasPrefix(name, prefix) {
+    return false
+  }
+  rest := name[len(prefix):]
+  if rest == "" {
+    return true
+  }
+  if rest[0] == '_' {
+    return true
+  }
+  if rest[0] >= '0' && rest[0] <= '9' {
+    last := prefix[len(prefix)-1]
+    return !(last >= '0' && last <= '9')
+  }
+  return false
 }
 
 // BelongVariableNameFamily reports whether any variable in the expression
@@ -127,6 +145,17 @@ func (self *swizzler) Run(
   check.Check(bank.Skip >= 0)
   check.Check(bank.Range >= 1)
 
+  // bank bits occupy [Skip, Skip+Range) — reject configs that overrun the
+  // input before slicing (WR-07)
+  if bank.Skip + bank.Range > input.Size() {
+    return Vector{}, fmt.Errorf(
+      "swizzle error: bank skip+range (%d+%d) exceeds input size %d",
+      bank.Skip,
+      bank.Range,
+      input.Size(),
+    )
+  }
+
   // (1) obtain a slice of vector for bank bits analysis
   bankBits := input.Slice(bank.Skip, bank.Skip + bank.Range)
   bankRank := -1
@@ -175,13 +204,19 @@ func (self *swizzler) Run(
   //     simple way is to chase the bit range (bank.Range, ...) and hit a dimension with
   //     full variable name, (ie basis) that from the same variable family
   freeIdx := []int{}
-  for i := bank.Range + 1; i < input.Size(); i++ {
+  for i := bank.Skip + bank.Range; i < input.Size(); i++ {
     if dimension := input.Index(i); BelongVariableNameFamily(
       dimension,
       bank.VariablePrefix,
     ) {
       freeIdx = append(freeIdx, i)
     }
+  }
+
+  // no free dimension exists — report it instead of panicking inside
+  // NewCoeffMat's m > 0 check downstream (WR-06)
+  if len(freeIdx) == 0 {
+    return Vector{}, SwizzleErrorNoFreeDegree
   }
 
   // (3) gather a new vector and check weather its rank matches or not
