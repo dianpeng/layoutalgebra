@@ -2,6 +2,7 @@ package f2
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/dianpeng/f2algebra/internal/check"
 )
@@ -122,39 +123,67 @@ func (self *rewriteFold) Rewrite(node Expr) (Expr, error) {
 
 // #2: commutative expression
 //
-// (1) (none_static x static)                 => (static x none_static)
-// (2) ((static x none_static) x static)      => ((static x static) x none_static)
+// We now uses a global order, defined by OTuple, for commutative, this simplified lots
+// the global order enforce that constant < symbol < variable < binary, which means
+// the old static order is still enforced, but also we have a global order now.
+//
+// (1) (A x B)        => (A x B)
+// (2) ((A x B) x C)  => ((A x B) x C)
 //
 // --------------------------------------------------------------------------------------
 
 func (self *rewriteCommute) Rewrite(node Expr) (Expr, error) {
 	bin := node.(*NodeBinary)
 
-	// case #1
-	if !IsStaticExpr(bin.L()) && IsStaticExpr(bin.R()) {
+	// case #1: pair ordering for operands the flatten pass (case #2) does not
+	// own — leaf/leaf, leaf/foreign-binary, and foreign-binary pairs. A
+	// same-op left child is excluded: case #2 canonicalizes the whole
+	// component and swapping here would fight it.
+	lSameOp := false
+	if lb, ok := bin.L().(*NodeBinary); ok && lb.Op() == bin.Op() {
+		lSameOp = true
+	}
+	if !lSameOp && bin.L().Order().Greater(bin.R().Order()) {
 		bin.Commute()
 		return bin, nil
 	}
 
-	// case #2
+	// case #2: same-op chain — flatten the WHOLE component, sort all operands,
+	// rebuild left-nested. Sorting only a 3-element window ping-pongs with
+	// rewriteReassociation forever (the sort emits a right-nested same-op node,
+	// the flattener re-undoes it, and the root rule fires every pass so the
+	// driver never descends past it), so the entire component must be
+	// canonicalized in one rewrite.
 	if bin.L().Kind() == Binary {
 		if lNode := bin.L().(*NodeBinary); lNode.Op() == bin.Op() {
-			l1 := lNode.L()
-			l2 := lNode.R()
-			r := bin.R()
 			op := bin.Op()
-
-			if IsStaticExpr(l1) && !IsStaticExpr(l2) && IsStaticExpr(r) {
-				return NewBinary(
-					op,
-					NewBinary(
-						op,
-						l1,
-						r,
-					),
-					l2,
-				), nil
+			arr := []Expr{}
+			var collect func(e Expr)
+			collect = func(e Expr) {
+				if b, ok := e.(*NodeBinary); ok && b.Op() == op {
+					collect(b.L())
+					collect(b.R())
+					return
+				}
+				arr = append(arr, e)
 			}
+			collect(bin)
+			sorted := true
+			for i := 0; i+1 < len(arr); i++ {
+				if arr[i].Order().Greater(arr[i+1].Order()) {
+					sorted = false
+					break
+				}
+			}
+			if sorted {
+				return nil, nil
+			}
+			sort.SliceStable(arr, func(i, j int) bool { return arr[i].Order().Less(arr[j].Order()) })
+			out := arr[0]
+			for _, x := range arr[1:] {
+				out = NewBinary(op, out, x)
+			}
+			return out, nil
 		}
 	}
 
@@ -196,7 +225,10 @@ func (self *rewriteReassociation) Rewrite(node Expr) (Expr, error) {
 	binR := bin.R()
 
 	// checking case 1)
-	if binR.Kind() == Binary && binL.Kind() != Binary {
+	// Rotation is valid for any lhs shape (associativity) — the old
+	// "lhs must not be binary" restriction stranded right-nested chains
+	// whose left child was a foreign-op binary, e.g. Mul ^ (Xor ^ y).
+	if binR.Kind() == Binary {
 		if rNode := binR.(*NodeBinary); bin.Op() == rNode.Op() {
 			return NewBinary(
 				bin.Op(),
@@ -215,19 +247,7 @@ func (self *rewriteReassociation) Rewrite(node Expr) (Expr, error) {
 			b := lNode.R()
 			c := rNode.L()
 			d := rNode.R()
-			return NewBinary(
-				bin.Op(),
-				NewBinary(
-					bin.Op(),
-					NewBinary(
-						bin.Op(),
-						a,
-						b,
-					),
-					c,
-				),
-				d,
-			), nil
+			return NewBinary(bin.Op(), NewBinary(bin.Op(), NewBinary(bin.Op(), a, b), c), d), nil
 		}
 	}
 
@@ -368,15 +388,7 @@ func (self *rewriteSymbol) Rewrite(node Expr) (Expr, error) {
 			l1Sym := l1.(*NodeSymbol)
 			rSym := r.(*NodeSymbol)
 			if l1Sym.Name() > rSym.Name() {
-				return NewBinary(
-					bin.Op(),
-					NewBinary(
-						lNode.Op(),
-						l0,
-						r,
-					),
-					l1,
-				), nil
+				return NewBinary(bin.Op(), NewBinary(lNode.Op(), l0, r), l1), nil
 			}
 		}
 	}

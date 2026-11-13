@@ -59,15 +59,21 @@ func TestSmokeFoldInspect(t *testing.T) {
 
 	folded := Fold(expr)
 
+	// Canonical form under the global order (const < symbol < variable <
+	// binary): the sorted Add chain brings like terms together, so the
+	// bare-variable normalization fires and merges x + M*x into x*(1+M).
 	want := NewAdd(
-		NewAdd(
-			NewMul(NewSymbol("M"), NewVariable("x")),
-			NewMul(NewSymbol("N"), NewVariable("y")),
+		NewMul(
+			NewSymbol("N"),
+			NewVariable("y"),
 		),
-		NewVariable("x"),
+		NewMul(
+			NewVariable("x"),
+			NewAdd(NewConstOne(), NewSymbol("M")),
+		),
 	)
 	if !folded.IsEqual(want) {
-		t.Errorf("smoke: folded result structurally non-equal to Xor(Xor(M*x, N*y), x)")
+		t.Errorf("smoke: folded result structurally non-equal to Xor(Mul(N,y), Mul(x,Add(1,M))); got %v", folded)
 	}
 
 	// Walk the result, logging every node and collecting variable names.

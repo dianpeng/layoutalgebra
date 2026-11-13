@@ -61,11 +61,7 @@ func (self *Vector) Add(that Vector) Vector {
 	for idx, v := range that.vec {
 		out = append(
 			out,
-			NewBinary(
-				Add,
-				self.vec[idx],
-				v,
-			),
+			NewBinary(Add, self.vec[idx], v),
 		)
 	}
 	vec := Vector{vec: out}
@@ -79,11 +75,7 @@ func (self *Vector) Multiply(that F2) Vector {
 	for _, v := range self.vec {
 		out = append(
 			out,
-			NewBinary(
-				Mul,
-				v,
-				NewConst(that),
-			),
+			NewBinary(Mul, v, NewConst(that)),
 		)
 	}
 	vec := Vector{vec: out}
@@ -388,7 +380,7 @@ func (self *Vector) extractLinearCoeffVector(expr Expr, order []string) ([]Expr,
 	//       the greatest variable closure. Notes this requires early exit during
 	//       scanning, hence we need to use ad-hoc method
 	exprMap := make(map[string]Expr)
-	danglingMul := []Expr{}                                 // distributed back to expression in exprMap as multiplications
+	danglingMul := []Expr{}                                 // rhs most multiplication
 	var forwardVisit func(parent *NodeBinary, e Expr) error // need recursion
 	forwardVisit = func(parent *NodeBinary, e Expr) error {
 		numOfVars := e.Marker()
@@ -409,9 +401,11 @@ func (self *Vector) extractLinearCoeffVector(expr Expr, order []string) ([]Expr,
 			// conservative way
 			if existed, hasExisted := exprMap[name]; hasExisted {
 				check.Check(parent != nil)
-				// cross variable closure node, which by design should never happen, so be
-				// conservative here
-				exprMap[name] = NewBinary(parent.Op(), existed, e)
+				return fmt.Errorf(
+					"%s and %s: expression is not properly folded, raise a ticket for fold engine",
+					existed.String(),
+					e.String(),
+				)
 			} else {
 				exprMap[name] = e
 			}
@@ -457,12 +451,18 @@ func (self *Vector) extractLinearCoeffVector(expr Expr, order []string) ([]Expr,
 
 			switch node := c.(type) {
 			case *NodeBinary:
-				// Variable node has its coefficient
+				// Variable node has its coefficient. Under the global order
+				// (const < symbol < variable < binary) the canonical Mul is
+				// variable-ON-LEFT, coefficient-on-right (x * (1 ^ S)); accept
+				// the variable on either side.
 				//
-				// Our folding engine will always generate left-associative expression tree
-				// hence the top level R must be a leaf node, and it must be the inner most
-				// **variable**. Notes for multiple different coefficient terms, it should
+				// Notes for multiple different coefficient terms, it should
 				// be resolved: ie (C1 * v) + (C2 * v) => (C1 + C2) * v
+				if l, ok := node.L().(*NodeVariable); ok {
+					check.Check(l.Name() == vName)
+					coeffExpr = node.R()
+					break
+				}
 				r := node.R()
 				check.Check(r.Kind() == Variable)
 				check.Check(r.(*NodeVariable).Name() == vName)

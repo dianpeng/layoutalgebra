@@ -42,11 +42,12 @@ func TestFoldNormalization(t *testing.T) {
 	s2 := NewSymbol("S2")
 
 	input := NewAdd(NewMul(s1, x), NewMul(s2, x))
-	want := NewMul(NewAdd(NewSymbol("S1"), NewSymbol("S2")), x)
+	// Global order: variable < binary, so the canonical Mul is x * (S1+S2).
+	want := NewMul(x, NewAdd(NewSymbol("S1"), NewSymbol("S2")))
 
 	got := Fold(input)
 	if !got.IsEqual(want) {
-		t.Errorf("Fold(S1*x + S2*x): got structurally non-equal to (S1+S2)*x")
+		t.Errorf("Fold(S1*x + S2*x): got structurally non-equal to x*(S1+S2)")
 	}
 }
 
@@ -59,7 +60,8 @@ func TestFoldNormalization(t *testing.T) {
 func TestFoldNormalizationBareVariable(t *testing.T) {
 	x := NewVariable("x")
 	s := NewSymbol("S")
-	want := NewMul(NewAdd(NewConstOne(), s), x)
+	// Global order: variable < binary, so the canonical Mul is x * (1+S).
+	want := NewMul(x, NewAdd(NewConstOne(), s))
 
 	cases := []struct {
 		name  string
@@ -74,7 +76,7 @@ func TestFoldNormalizationBareVariable(t *testing.T) {
 	wants := []Expr{
 		want,
 		want,
-		NewMul(NewAdd(NewSymbol("M"), NewSymbol("N")), x),
+		NewMul(x, NewAdd(NewSymbol("M"), NewSymbol("N"))),
 		NewConstZero(),
 	}
 

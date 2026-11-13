@@ -19,11 +19,12 @@ const (
 	One  F2 = true
 )
 
+// ORDER matters
 const (
-	Variable NodeKind = iota
-	Const
+	Const NodeKind = iota
+	Symbol
+	Variable
 	Binary
-	Symbol // this is also constant, but ie a symbol based constant, not literals
 )
 
 const (
@@ -41,6 +42,9 @@ type Expr interface {
 	// String renders the node in the canonical fully-parenthesized infix form,
 	// so any Expr-typed value prints via fmt directly.
 	String() string
+
+	// Return ordered tuple for the given expression underlying
+	Order() OTuple
 
 	// Congurence
 	//
@@ -156,6 +160,9 @@ func (self *NodeVariable) IsEqual(that Expr) bool {
 	}
 	return false
 }
+func (self *NodeVariable) Order() OTuple {
+	return NewNameTuple(int(Variable), self.name)
+}
 
 func (self *NodeConst) Int() uint {
 	if self.value {
@@ -174,6 +181,9 @@ func (self *NodeConst) IsEqual(that Expr) bool {
 func (self *NodeConst) staticNode()    {}
 func (self *NodeConst) IsConst() bool  { return true }
 func (self *NodeConst) IsSymbol() bool { return false }
+func (self *NodeConst) Order() OTuple {
+	return NewOTuple(int(Const), int64(self.Int()))
+}
 
 func (self *NodeBinary) Kind() NodeKind { return Binary }
 func (self *NodeBinary) IsEqual(that Expr) bool {
@@ -192,6 +202,9 @@ func (self *NodeBinary) Commute() {
 	self.l = self.r
 	self.r = l
 }
+func (self *NodeBinary) Order() OTuple {
+	return NewBinaryTuple(self.op, self.l.Order(), self.r.Order())
+}
 
 func (self *NodeSymbol) Kind() NodeKind { return Symbol }
 func (self *NodeSymbol) Name() string   { return self.name }
@@ -204,6 +217,10 @@ func (self *NodeSymbol) IsEqual(that Expr) bool {
 func (self *NodeSymbol) staticNode()    {}
 func (self *NodeSymbol) IsConst() bool  { return false }
 func (self *NodeSymbol) IsSymbol() bool { return true }
+
+func (self *NodeSymbol) Order() OTuple {
+	return NewNameTuple(int(Symbol), self.name)
+}
 
 func (self F2) Add(that F2) F2 { return F2(self != that) }
 func (self F2) Sub(that F2) F2 {
