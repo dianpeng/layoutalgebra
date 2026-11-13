@@ -374,6 +374,13 @@ func (self *Vector) extractLinearCoeffVector(expr Expr, order []string) ([]Expr,
 		if expr.Kind() != Const || !expr.(*NodeConst).Value().IsZero() {
 			return nil, fmt.Errorf("affine from zero vector")
 		}
+		// Zero row: a valid linear-map row (e.g. byte-padding bits after a
+		// stride shift). Yields all-zero coefficients — handled, not an error.
+		out := make([]Expr, len(order))
+		for i := range out {
+			out[i] = NewConstZero()
+		}
+		return out, nil
 	}
 
 	// [1.3] Forward pass to get the frontier for each variable closure, hence we get
