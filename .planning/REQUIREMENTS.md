@@ -28,8 +28,8 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Utilities
 
-- [ ] **UTIL-01**: Expression dumper — render expression trees as infix/prefix strings with variable names
-- [ ] **UTIL-02**: Vector/matrix pretty printer — formatted per-bit F₂ expression tables
+- [x] **UTIL-01**: Expression dumper — render expression trees as infix/prefix strings with variable names
+- [x] **UTIL-02**: Vector/matrix pretty printer — formatted per-bit F₂ expression tables
 - [ ] **UTIL-03**: Simplifier + equivalence checker for comparing layout mappings
 - [ ] **UTIL-04**: Code generation — interpret the final F₂ vector into emitted index-arithmetic code
 
@@ -70,8 +70,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MAP-03 | Quick 261113-gll | Complete |
 | TEST-01 | Quick 261113-gll | Complete |
 | TEST-02 | Quick 261113-gll | Complete |
-| UTIL-01 | — (on-demand via /gsd:quick) | Pending |
-| UTIL-02 | — (on-demand via /gsd:quick) | Pending |
+| UTIL-01 | Quick 261113-ir0 | Complete |
+| UTIL-02 | Quick 261113-ir0 | Complete |
 | UTIL-03 | — (on-demand via /gsd:quick) | Pending |
 | UTIL-04 | — (on-demand via /gsd:quick) | Pending |
 
