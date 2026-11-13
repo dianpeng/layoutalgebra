@@ -15,7 +15,13 @@ var dcheckEnabled = false
 func fail(kind string, a ...interface{}) {
   expr := "invariant violated"
   if len(a) > 0 {
-    expr = fmt.Sprintf(a[0].(string), a[1:]...)
+    // comma-ok: a non-string first arg (or missing format args) must not
+    // panic inside fail itself with a secondary error (WR-14)
+    if format, ok := a[0].(string); ok {
+      expr = fmt.Sprintf(format, a[1:]...)
+    } else {
+      expr = fmt.Sprint(a...)
+    }
   }
 	// +1 for fail, +1 for the caller of Check/Dcheck.
 	// runtime.Caller(2) points at the original call site.

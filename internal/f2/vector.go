@@ -53,6 +53,10 @@ func (self *Vector) Fold() {
 
 // Add a vector to self and result in another vector
 func (self *Vector) Add(that Vector) Vector {
+  check.Check(
+    self.Size() == that.Size(),
+    fmt.Sprintf("vector add size mismatch: %d vs %d", self.Size(), that.Size()),
+  )
   out := []Expr{}
   for idx, v := range that.vec {
     out = append(
@@ -94,6 +98,10 @@ func (self *Vector) ShiftL(k int, overflow bool) Vector {
   } else {
     vec = make([]Expr, len(self.vec))
   }
+  // vacated slots hold ConstZero, never nil Expr holes (WR-02)
+  for i := range vec {
+    vec[i] = NewConstZero()
+  }
 
   for i := len(self.vec) - 1; i >= 0; i-- {
     countI := len(self.vec) - 1 - i // starting from 0 forward counter/induction variable
@@ -114,6 +122,10 @@ func (self *Vector) ShiftR(k int, overflow bool) Vector {
     vec = make([]Expr, len(self.vec) + k)
   } else {
     vec = make([]Expr, len(self.vec))
+  }
+  // vacated slots hold ConstZero, never nil Expr holes (WR-02)
+  for i := range vec {
+    vec[i] = NewConstZero()
   }
 
   for i := 0; i < len(self.vec); i++ {
@@ -235,7 +247,9 @@ func (self *Vector) doCoeffMat(vec []Expr, basis []string) (CoeffMat, error) {
   //     expression, interpretation
   tVec := make([]Expr, 0, self.Size())
   for _, expr := range vec {
-    tVec = append(tVec, SymbolizeExcept(expr, basis))
+    // Fold before extraction so duplicate same-variable closures are merged
+    // into a single canonical closure (WR-01).
+    tVec = append(tVec, Fold(SymbolizeExcept(expr, basis)))
   }
 
   // (2) Perform normalization for newly obtained vectors.
@@ -532,6 +546,10 @@ func NewFromHardware(bits []int, namePrefix []string) Vector {
 //
 // --------------------------------------------------------------------------------------
 func NewFromSemanticMapping(dims [][]int, namePrefix []string) Vector {
+  check.Check(
+    len(namePrefix) >= len(dims),
+    fmt.Sprintf("semantic mapping: %d dims but %d prefixes", len(dims), len(namePrefix)),
+  )
   counter := make(map[string]int) // counter map for each name, notes no dimension and idx suffix
   out := []Expr{}
 

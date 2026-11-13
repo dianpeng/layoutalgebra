@@ -1,5 +1,11 @@
 package f2
 
+import (
+  "fmt"
+
+  "github.com/dianpeng/f2algebra/internal/check"
+)
+
 // --------------------------------------------------------------------------------------
 //
 // This is a very simple fold engine for normalization of the expression tree
@@ -401,19 +407,32 @@ func (self *folder) rewrite(expr Expr) error {
   return nil
 }
 
-func (self *folder) doRun(expr Expr) []Replacement {
+func (self *folder) doRun(expr Expr) ([]Replacement, error) {
   self.current = nil // reset current replacement queue
-  self.rewrite(expr)
-  return self.current
+  if err := self.rewrite(expr); err != nil {
+    return nil, err // rewrite rule errors must not be swallowed (WR-10a)
+  }
+  return self.current, nil
 }
 
 func (self *folder) run(expr Expr) Expr {
+  var replacementQueue []Replacement
+  var err error
   for i := 0; i < self.maxBound; i++ {
-    replacementQueue := self.doRun(expr)
+    replacementQueue, err = self.doRun(expr)
+    if err != nil {
+      check.Bug(fmt.Sprintf("fold: rewrite error: %v", err))
+    }
     if len(replacementQueue) == 0 {
       break
     }
     expr = Replace(expr, replacementQueue)
+  }
+  // A non-empty queue after the loop means the cap was exhausted before
+  // reaching a fixpoint — the result would be a silent non-canonical
+  // expression, which defeats the engine's entire purpose (WR-10b)
+  if len(replacementQueue) != 0 {
+    check.Bug(fmt.Sprintf("fold: iteration cap %d exhausted before canonical form", self.maxBound))
   }
   return expr
 }
