@@ -1,6 +1,9 @@
 package f2
 
-import "testing"
+import (
+  "fmt"
+  "testing"
+)
 
 // Exact-string tests for the dump facilities in dump.go. Every locked format
 // choice from the plan is asserted by full-string equality, never substring
@@ -93,6 +96,24 @@ func TestDumpConstMat(t *testing.T) {
   want := "[1 0]\n[0 1]\n"
   if got := m.Dump(); got != want {
     t.Errorf("Dump() = %q, want %q", got, want)
+  }
+}
+
+// Proves String() is a member of the Expr interface: rendering dispatches
+// through the interface value itself, with no package-level dispatcher
+// involved. The Expr type annotation on tree is load-bearing.
+func TestDumpExprInterfaceNative(t *testing.T) {
+  a := NewVariable("a")
+  b := NewVariable("b")
+  c := NewVariable("c")
+  var tree Expr = NewAdd(NewMul(a, b), c)
+  want := "((a * b) ^ c)"
+
+  if got := tree.String(); got != want {
+    t.Errorf("Expr.String() = %q, want %q", got, want)
+  }
+  if got := fmt.Sprintf("%v", tree); got != want {
+    t.Errorf("Sprintf(\"%%v\", expr) = %q, want %q", got, want)
   }
 }
 
