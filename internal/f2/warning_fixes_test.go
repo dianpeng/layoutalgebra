@@ -194,3 +194,134 @@ func TestFixWR15ShiftMatrixNegativeK(t *testing.T) {
     ShiftMatrix(3, -1)
   })
 }
+
+// ---------------------------------------------------------------------------
+// WR-05: swizzle free-bit scan started at bank.Range + 1 instead of
+// bank.Skip + bank.Range — a bank bit was eligible as a free XOR source
+// ---------------------------------------------------------------------------
+
+func TestFixWR05FreeScanStart(t *testing.T) {
+  l0 := NewVariable("l_0")
+  l1 := NewVariable("l_1")
+  l2 := NewVariable("l_2")
+  l3 := NewVariable("l_3")
+  // 8-bit input, bank bits at [2, 7) = [l_0, l_0, l_1, l_2, l_3]; the only
+  // candidate past the bank is index 7, which is ConstZero. Pre-fix the scan
+  // started at index 6 (inside the bank) and used bank bit l_3 as the free
+  // XOR source; post-fix no free degree exists.
+  input := NewVector([]Expr{
+    NewConstZero(), NewConstZero(), l0, l0, l1, l2, l3, NewConstZero(),
+  })
+  bank := Bank{Skip: 2, Range: 5, VariablePrefix: "l"}
+
+  if _, err := SwizzleMap(bank, input); err != SwizzleErrorNoFreeDegree {
+    t.Errorf("err = %v, want SwizzleErrorNoFreeDegree", err)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// WR-06: empty free vector panicked inside NewCoeffMat instead of returning
+// SwizzleErrorNoFreeDegree
+// ---------------------------------------------------------------------------
+
+func TestFixWR06NoFreeDegree(t *testing.T) {
+  // bank rank 1 < Range 2, no family bits past the bank -> no free degree
+  input := NewVector([]Expr{
+    NewVariable("t0"), NewVariable("t0"), NewVariable("w0"),
+  })
+  bank := Bank{Skip: 0, Range: 2, VariablePrefix: "t"}
+
+  if _, err := SwizzleMap(bank, input); err != SwizzleErrorNoFreeDegree {
+    t.Errorf("err = %v, want SwizzleErrorNoFreeDegree", err)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// WR-07: input.Slice(bank.Skip, bank.Skip+bank.Range) was unchecked
+// ---------------------------------------------------------------------------
+
+func TestFixWR07BankBounds(t *testing.T) {
+  input := NewVector([]Expr{
+    NewVariable("t0"), NewVariable("t0"), NewVariable("w0"), NewVariable("w0"),
+  })
+  bank := Bank{Skip: 3, Range: 5, VariablePrefix: "t"} // 3+5 > 4
+
+  if _, err := SwizzleMap(bank, input); err == nil {
+    t.Error("err = nil, want non-nil error for Skip+Range > input size")
+  }
+}
+
+// ---------------------------------------------------------------------------
+// WR-10: fold driver silently returned a non-canonical expression when the
+// iteration cap was exhausted
+// ---------------------------------------------------------------------------
+
+func TestFixWR10FoldCapExhausted(t *testing.T) {
+  x := NewVariable("x")
+  one := NewConstOne()
+  // ((x + 1) + 1) needs at least 2 rewrite rounds (commute at the inner add,
+  // then commute/const-fold at the root), so maxBound: 1 exhausts the cap
+  // with a non-empty replacement queue.
+  input := NewBinary(Add, NewBinary(Add, x, one), one)
+
+  f := &folder{maxBound: 1}
+  mustPanicContains(t, "BUG", func() {
+    f.run(input)
+  })
+
+  // ordinary Fold on the same input still converges to canonical form (x)
+  if out := Fold(input); !out.IsEqual(x) {
+    t.Errorf("Fold(((x+1)+1)) = %v, want x", out)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// WR-12: StrideMap did not validate dtypeSize
+// ---------------------------------------------------------------------------
+
+func TestFixWR12StrideMapDtypeSize(t *testing.T) {
+  a := NewVariable("a")
+  b := NewVariable("b")
+  v := NewVector([]Expr{a, b})
+  tileShape := []int{0, 0}
+
+  if _, err := StrideMap(tileShape, v, 3); err == nil {
+    t.Error("StrideMap(dtypeSize=3) err = nil, want non-nil")
+  }
+
+  for _, size := range []int{0, 1, 2} {
+    out, err := StrideMap(tileShape, v, size)
+    if err != nil {
+      t.Errorf("StrideMap(dtypeSize=%d) err = %v, want nil", size, err)
+      continue
+    }
+    if want := 2 + size; out.Size() != want {
+      t.Errorf("StrideMap(dtypeSize=%d) size = %d, want %d", size, out.Size(), want)
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// WR-13: NameBelong prefix matching was fragile across variable families
+// ---------------------------------------------------------------------------
+
+func TestFixWR13NameBelong(t *testing.T) {
+  cases := []struct {
+    name   string
+    prefix string
+    want   bool
+  }{
+    {"thr1_0", "thr1", true},   // same family
+    {"thr10_0", "thr1", false}, // digit-ending prefix: "0" continues family thr10
+    {"t0", "t", true},          // hardware convention
+    {"t_0", "t", true},         // underscore boundary
+    {"thr1_0", "thr", true},    // digit after non-digit prefix is a new dim
+    {"t", "t", true},           // exact match
+    {"t0", "w", false},         // different prefix
+  }
+  for _, c := range cases {
+    if got := NameBelong(c.name, c.prefix); got != c.want {
+      t.Errorf("NameBelong(%q, %q) = %v, want %v", c.name, c.prefix, got, c.want)
+    }
+  }
+}
