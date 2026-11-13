@@ -54,6 +54,17 @@ func enumerate(n int, fn func(Expr)) {
 	gen(n, fn)
 }
 
+// flattenComponent appends the operand list of e's same-op component (edges
+// labeled op only) to out.
+func flattenComponent(op int, e Expr, out *[]Expr) {
+	if b, ok := e.(*NodeBinary); ok && b.Op() == op {
+		flattenComponent(op, b.L(), out)
+		flattenComponent(op, b.R(), out)
+		return
+	}
+	*out = append(*out, e)
+}
+
 // canonViolation returns a description of the first canonical-form violation
 // in e, or "" if e is canonical per the fold engine's intended normal form:
 // no right-nested same-op chains, and every same-op component flattened and
@@ -73,21 +84,14 @@ func canonViolation(e Expr) string {
 				return nil
 			}
 			op := bin.Op()
-			arr := []Expr{}
-			var flatten func(x Expr)
-			flatten = func(x Expr) {
-				if b, ok := x.(*NodeBinary); ok && b.Op() == op {
-					flatten(b.L())
-					flatten(b.R())
-					return
-				}
-				arr = append(arr, x)
-			}
-			flatten(bin)
-			for i := 0; i+1 < len(arr); i++ {
-				if arr[i].Order().Greater(arr[i+1].Order()) {
-					bad = fmt.Sprintf("unsorted same-op chain at %v", bin)
-					return nil
+			if l, ok := bin.L().(*NodeBinary); ok && l.Op() == op {
+				arr := []Expr{}
+				flattenComponent(op, bin, &arr)
+				for i := 0; i+1 < len(arr); i++ {
+					if arr[i].Order().Greater(arr[i+1].Order()) {
+						bad = fmt.Sprintf("unsorted same-op chain at %v", bin)
+						return nil
+					}
 				}
 			}
 			return nil

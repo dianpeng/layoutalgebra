@@ -54,11 +54,6 @@ type rewriteNormalization struct {
 	rewriteBinary
 }
 
-// symbol normalization
-type rewriteSymbol struct {
-	rewriteBinary
-}
-
 // rewriteRuleOrder fixes the rule iteration order. The driver MUST iterate
 // rules in this exact order: Go map iteration is randomized per run, so with
 // the old map-driven driver, when two rules matched the same node the chosen
@@ -72,7 +67,6 @@ var rewriteRuleOrder = []rewriteRules{
 	&rewriteReassociation{},
 	&rewriteDistribution{},
 	&rewriteNormalization{},
-	&rewriteSymbol{},
 }
 
 func (self *rewriteBinary) Check(n Expr) bool {
@@ -144,8 +138,11 @@ func (self *rewriteCommute) Rewrite(node Expr) (Expr, error) {
 		lSameOp = true
 	}
 	if !lSameOp && bin.L().Order().Greater(bin.R().Order()) {
-		bin.Commute()
-		return bin, nil
+		// Pure replacement — never mutate in place. In-place Commute here
+		// returns the same node, which breaks the driver's change detection
+		// (a mutation reported as no-op stalls the fixpoint one rewrite short)
+		// and corrupts the replacement queue's old->new protocol.
+		return NewBinary(bin.Op(), bin.R(), bin.L()), nil
 	}
 
 	// case #2: same-op chain — flatten the WHOLE component, sort all operands,
@@ -261,20 +258,34 @@ func (self *rewriteReassociation) Rewrite(node Expr) (Expr, error) {
 func (self *rewriteDistribution) Rewrite(node Expr) (Expr, error) {
 	bin := node.(*NodeBinary)
 	if bin.Op() == Mul {
-		binL := bin.L()
-		c := bin.R()
-		if binL.Kind() == Binary {
-			lNode := binL.(*NodeBinary)
-			a := lNode.L()
-			b := lNode.R()
-			// For this case we need to rull out the **normalization** rules, since it
-			// will form a cycle here. To address this, we just check to make sure a and
-			// b are binary, then we fold it. Otherwise we leave it as is
-			if !IsStaticExprRecursive(a) && !IsStaticExprRecursive(b) && lNode.Op() == Add {
-				lhs := NewBinary(Mul, a, c)
-				rhs := NewBinary(Mul, b, c)
-				return NewBinary(Add, lhs, rhs), nil
+		// A non-static Add on EITHER side distributes. Matching both
+		// orientations keeps the redex shape-driven instead of order-driven:
+		// otherwise rewriteCommute can hide a left-side redex by swapping
+		// before rewriteDistribution sees it, making the canonical form
+		// depend on rule application order (a confluence violation).
+		isAdd := func(e Expr) (*NodeBinary, bool) {
+			b, ok := e.(*NodeBinary)
+			if !ok || b.Op() != Add {
+				return nil, false
 			}
+			if IsStaticExprRecursive(b.L()) || IsStaticExprRecursive(b.R()) {
+				return nil, false // static Adds are coefficients, not redexes
+			}
+			return b, true
+		}
+		if lNode, ok := isAdd(bin.L()); ok {
+			return NewBinary(
+				Add,
+				NewBinary(Mul, lNode.L(), bin.R()),
+				NewBinary(Mul, lNode.R(), bin.R()),
+			), nil
+		}
+		if rNode, ok := isAdd(bin.R()); ok {
+			return NewBinary(
+				Add,
+				NewBinary(Mul, bin.L(), rNode.L()),
+				NewBinary(Mul, bin.L(), rNode.R()),
+			), nil
 		}
 	}
 
@@ -333,66 +344,6 @@ func (self *rewriteNormalization) Rewrite(node Expr) (Expr, error) {
 			}
 		}
 	}
-	return nil, nil
-}
-
-// Symbol
-//
-// We need to normalize symbol as well, since the matrix operation will perform symbolic
-// analysis instead of targeting on constant only. This means we need to have a even
-// finer consistency order within symbol and also symbol against const
-//
-// 1) For order between symbol and const: const => lhs and symbol => rhs
-// 2) For symbol against symbols: order them lexical graphically
-//
-// This forms a cananolical representation of coefficient of any expressions. This is
-// super important when testing equalvelence. Our equal function DOES not compare actual
-// congurence relationship, we sololy rely on the representational equavlence
-//
-// It is possible to implement something like e-graph to proove conguruence, we may add
-// it in the future.
-func (self *rewriteSymbol) Rewrite(node Expr) (Expr, error) {
-	bin := node.(*NodeBinary)
-	l := bin.L()
-	r := bin.R()
-
-	// 1) push const to lhs and symbol to rhs
-	if IsStaticExpr(l) && IsStaticExpr(r) {
-		if l.Kind() == Symbol && r.Kind() == Const {
-			bin.Commute()
-		}
-	}
-
-	// lexical order of symbols
-	//
-	// (1): (sym1 sym2)
-	// (2): ((const sym1) sym2)
-
-	// case #1
-	if l.Kind() == Symbol && r.Kind() == Symbol {
-		lSym := l.(*NodeSymbol)
-		rSym := r.(*NodeSymbol)
-		if lSym.Name() > rSym.Name() {
-			bin.Commute()
-			return bin, nil
-		}
-	}
-
-	// case #2
-	if l.Kind() == Binary && r.Kind() == Symbol {
-		lNode := l.(*NodeBinary)
-		l0 := lNode.L()
-		l1 := lNode.R()
-		r := bin.R()
-		if bin.Op() == lNode.Op() && l0.Kind() == Const && l1.Kind() == Symbol && r.Kind() == Symbol {
-			l1Sym := l1.(*NodeSymbol)
-			rSym := r.(*NodeSymbol)
-			if l1Sym.Name() > rSym.Name() {
-				return NewBinary(bin.Op(), NewBinary(lNode.Op(), l0, r), l1), nil
-			}
-		}
-	}
-
 	return nil, nil
 }
 

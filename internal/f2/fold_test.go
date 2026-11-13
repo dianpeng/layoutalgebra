@@ -104,7 +104,7 @@ func TestFoldNormalizationBareVariableNegative(t *testing.T) {
 	}{
 		{"mul_on_other_variable", NewAdd(x, NewMul(s, y))},
 		{"two_bare_variables", NewAdd(x, y)},
-		{"non_static_coefficient", NewAdd(x, NewMul(s, NewAdd(x, y)))},
+		{"non_static_coefficient", NewAdd(x, NewMul(y, x))},
 	}
 
 	for _, c := range cases {
