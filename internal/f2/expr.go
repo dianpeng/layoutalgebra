@@ -38,6 +38,10 @@ const (
 type Expr interface {
   Kind() NodeKind
 
+  // String renders the node in the canonical fully-parenthesized infix form,
+  // so any Expr-typed value prints via fmt directly.
+  String() string
+
   // Congurence
   //
   // (1) variable's congurence is defined by name identical
@@ -85,6 +89,12 @@ type NodeSymbol struct {
   nodeMarker
   name string
 }
+
+// Compile-time assertions: every node type implements Expr, including String().
+var _ Expr = (*NodeVariable)(nil)
+var _ Expr = (*NodeConst)(nil)
+var _ Expr = (*NodeSymbol)(nil)
+var _ Expr = (*NodeBinary)(nil)
 
 type Replacement struct {
   Old Expr
