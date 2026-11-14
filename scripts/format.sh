@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# format.sh — gofmt every Go source tree in the repo (cmd, internal, pkg).
-#
-# The repo root has no loose .go files, so the three trees are exhaustive.
-# Prints how many files were rewritten, or "already formatted" when clean.
 set -euo pipefail
 
 # Resolve the repo root from the script's own location, so this works from
@@ -11,10 +7,10 @@ cd "$(dirname "$0")/.."
 
 unformatted=$(gofmt -l internal)
 if [ -z "$unformatted" ]; then
-  echo "tcacomp: already formatted (cmd internal pkg)"
+  echo "f2: already formatted (cmd internal pkg)"
   exit 0
 fi
 
 count=$(printf '%s\n' "$unformatted" | wc -l)
 gofmt -l -w internal
-echo "tcacomp: rewrote ${count} file(s)"
+echo "f2: rewrote ${count} file(s)"
