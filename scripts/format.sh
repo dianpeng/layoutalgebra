@@ -16,5 +16,5 @@ if [ -z "$unformatted" ]; then
 fi
 
 count=$(printf '%s\n' "$unformatted" | wc -l)
-gofmt -l -w cmd internal pkg
+gofmt -l -w internal
 echo "tcacomp: rewrote ${count} file(s)"
