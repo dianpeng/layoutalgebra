@@ -152,6 +152,75 @@ func TestScoreCoalescingStrided(t *testing.T) {
 	}
 }
 
+// TestScoreCoalescingCustomSegment: different architectures declare their
+// own segment boundaries via Segment. On the perfect-scenario offset
+// (restricted rows [0,0,t4,t3,t2,t1,t0,z,z], 9 bits): with {Sector:4, Line:6}
+// the sector rows [0,5) rank 3 and the line rows [0,3) rank 1, vs the
+// NVIDIA-default {0, 2}.
+func TestScoreCoalescingCustomSegment(t *testing.T) {
+	hw := NewVector([]Expr{
+		NewVariable("w1"), NewVariable("w0"),
+		NewVariable("t4"), NewVariable("t3"), NewVariable("t2"),
+		NewVariable("t1"), NewVariable("t0"),
+	})
+	plan, err := GmemCoalescingMap(hw, []GmemAxis{{Name: "i", Bits: 2}, {Name: "j", Bits: 5}}, 5, 2)
+	if err != nil {
+		t.Fatalf("GmemCoalescingMap: %v", err)
+	}
+	strided, err := StrideMap(make([]int, 7), plan.Matrix.Apply(hw), 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	def, err := ScoreCoalescing(strided, laneNameList(5))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if def.LineRank != 0 || def.SectorRank != 2 {
+		t.Fatalf("default score = %+v, want {0, 2}", def)
+	}
+
+	custom, err := ScoreCoalescingWith(strided, laneNameList(5), Segment{Sector: 4, Line: 6})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if custom.LineRank != 1 || custom.SectorRank != 3 {
+		t.Errorf("custom score = %+v, want {1, 3} for Segment{4, 6}", custom)
+	}
+
+	// pipeline variant threads the segment through
+	res, err := GmemOptimizeWith(hw, []GmemAxis{{Name: "i", Bits: 2}, {Name: "j", Bits: 5}}, 5, 2, Segment{Sector: 4, Line: 6})
+	if err != nil {
+		t.Fatalf("GmemOptimizeWith: %v", err)
+	}
+	if res.Score != custom {
+		t.Errorf("pipeline score = %+v, want %+v", res.Score, custom)
+	}
+}
+
+// TestSegmentValidation: malformed boundaries must error, not mis-score.
+func TestSegmentValidation(t *testing.T) {
+	hw := NewVector([]Expr{NewVariable("t0"), NewVariable("t1"), NewVariable("t2"), NewVariable("t3")})
+	strided, err := StrideMap(make([]int, 4), hw, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bad := []Segment{
+		{Sector: 5, Line: 5},  // line must exceed sector
+		{Sector: 6, Line: 5},  // inverted
+		{Sector: -1, Line: 7}, // negative
+		{Sector: 5, Line: -7}, // negative
+	}
+	for _, s := range bad {
+		if _, err := ScoreCoalescingWith(strided, laneNameList(4), s); err == nil {
+			t.Errorf("Segment %+v: want error, got nil", s)
+		}
+	}
+	if _, err := GmemOptimizeWith(hw, []GmemAxis{{Name: "i", Bits: 2}, {Name: "j", Bits: 2}}, 4, 0, Segment{Sector: 5, Line: 5}); err == nil {
+		t.Error("GmemOptimizeWith with bad segment: want error, got nil")
+	}
+}
+
 // TestGmemCoalescingMapValidation: bad inputs must error, not panic.
 func TestGmemCoalescingMapValidation(t *testing.T) {
 	hw := NewVector([]Expr{NewVariable("t0"), NewVariable("t1")})

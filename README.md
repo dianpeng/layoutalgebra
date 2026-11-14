@@ -138,7 +138,7 @@ are not.
 |---|---|
 | Vector order | **MSB-first**: index 0 is the most significant bit (`ShiftMatrix` semantics). The lowest byte weights sit at the *end* of a vector. |
 | Lane bits | The **trailing** entries of the hardware vector are the warp lane bits (CUDA linear-thread-index convention: `threadIdx.x` is fastest-varying). |
-| Bank / segment windows | `Bank{Skip, Range}` = bits `[Skip, Skip+Range)`; CUDA SMEM banks are `{2, 5}`, GMEM sectors are `{5, ∞)`, lines `{7, ∞)`. |
+| Bank / segment windows | `Bank{Skip, Range}` = bits `[Skip, Skip+Range)`; CUDA SMEM banks are `{2, 5}`. GMEM boundaries are the `Segment{Sector, Line}` log2 sizes — NVIDIA default `GmemSegmentNvidia = {5, 7}` (32B sectors, 128B lines); other architectures declare their own. |
 | Expressions | Trees, never DAGs — simplification never eliminates expressions (project invariant). |
 | Scalars | `type F2 bool` (defined type — Go forbids methods on aliases); `Zero`/`One` constants. |
 | Static parameters | Symbols (`M`, `N`) — substituted with concrete values at code-generation time via `Substitute`. |

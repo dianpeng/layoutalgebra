@@ -19,16 +19,18 @@ import (
 //
 // The coalescing objective is evaluated on the LANE-RESTRICTED offset matrix:
 // warp/block bits are fixed per warp instruction, so only the lane bits vary.
-// For a warp of m lanes with dtype size 2^d bytes:
+// For a warp of m lanes with dtype size 2^d bytes, using segment boundaries
+// {Sector, Line} (NVIDIA default {5, 7}: 32B sectors, 128B lines):
 //
-//	lineRank   = rank( offset rows with byte weight >= 2^7 )   (distinct 128B lines)
-//	sectorRank = rank( offset rows with byte weight >= 2^5 )   (distinct 32B sectors)
+//	lineRank   = rank( offset rows with byte weight >= 2^Line )   (distinct cache lines)
+//	sectorRank = rank( offset rows with byte weight >= 2^Sector ) (distinct sectors)
 //
-// subject to the volume floors sectorRank >= m+d-5, lineRank >= max(0, m+d-7).
-// Perfect coalescing = both floors met. Since vectors are MSB-first, the low
-// byte weights live at the END of the offset vector; the greedy placement —
-// lane bits into the lowest logical positions — is provably optimal for this
-// lexicographic objective, which is what GmemCoalescingMap emits.
+// subject to the volume floors sectorRank >= m+d-Sector, lineRank >= max(0,
+// m+d-Line). Perfect coalescing = both floors met. Since vectors are MSB-
+// first, the low byte weights live at the END of the offset vector; the
+// greedy placement — lane bits into the lowest logical positions — is
+// provably optimal for this lexicographic objective, which is what
+// GmemCoalescingMap emits.
 //
 // --------------------------------------------------------------------------------------
 
@@ -81,22 +83,57 @@ func SubstituteVector(v Vector, subst map[string]Expr) Vector {
 // --------------------------------------------------------------------------------------
 
 // CoalesceScore reports the lane-restricted coalescing objective of a
-// byte-offset vector: how many distinct 128B lines and 32B sectors one warp
+// byte-offset vector: how many distinct cache lines and sectors one warp
 // instruction touches.
 type CoalesceScore struct {
 	LineRank   int // distinct lines = 2^LineRank
 	SectorRank int // distinct sectors = 2^SectorRank (the transaction cost)
 }
 
-// ScoreCoalescing evaluates the objective on a byte-offset vector. Non-lane
-// variables are substituted with zero (the lane restriction: warp bits are
-// constant within a warp), then the coefficient matrix over the lane basis is
-// built and the line/sector row slices ranked exactly.
+// Segment declares the GMEM segment boundaries for the coalescing analysis,
+// mirroring Bank for SMEM. Sector is log2 of the sector size in bytes (the
+// memory-transaction granularity); Line is log2 of the cache line size.
+// Line must be strictly greater than Sector.
+type Segment struct {
+	Sector int
+	Line   int
+}
+
+// GmemSegmentNvidia is the default Segment for NVIDIA GPUs — 32B sectors
+// (2^5) and 128B lines (2^7), the architecture-fixed {5, 7} bit boundaries.
+// Other architectures can declare their own via Segment{...}.
+var GmemSegmentNvidia = Segment{Sector: 5, Line: 7}
+
+func (s Segment) validate() error {
+	if s.Sector < 0 || s.Line < 0 {
+		return fmt.Errorf("Segment: negative boundary: %+v", s)
+	}
+	if s.Line <= s.Sector {
+		return fmt.Errorf("Segment: Line (%d) must be strictly greater than Sector (%d)", s.Line, s.Sector)
+	}
+	return nil
+}
+
+// ScoreCoalescing evaluates the objective with the NVIDIA default segments
+// (32B sectors, 128B lines).
+func ScoreCoalescing(offset Vector, laneNames []string) (CoalesceScore, error) {
+	return ScoreCoalescingWith(offset, laneNames, GmemSegmentNvidia)
+}
+
+// ScoreCoalescingWith evaluates the objective on a byte-offset vector with
+// explicit segment boundaries. Non-lane variables are substituted with zero
+// (the lane restriction: warp bits are constant within a warp), then the
+// coefficient matrix over the lane basis is built and the line/sector row
+// slices ranked exactly.
 //
 // Vectors are MSB-first: byte weight 2^k sits at index (size-1)-k, so the
-// sector rows are indices [0, size-5) and the line rows are [0, size-7).
-func ScoreCoalescing(offset Vector, laneNames []string) (CoalesceScore, error) {
-	check.Check(len(laneNames) > 0, "ScoreCoalescing: empty lane basis")
+// sector rows are indices [0, size-Segment.Sector) and the line rows are
+// [0, size-Segment.Line).
+func ScoreCoalescingWith(offset Vector, laneNames []string, seg Segment) (CoalesceScore, error) {
+	if err := seg.validate(); err != nil {
+		return CoalesceScore{}, err
+	}
+	check.Check(len(laneNames) > 0, "ScoreCoalescingWith: empty lane basis")
 
 	// lane restriction: zero out every non-lane variable
 	subst := map[string]Expr{}
@@ -143,11 +180,11 @@ func ScoreCoalescing(offset Vector, laneNames []string) (CoalesceScore, error) {
 	}
 
 	size := offset.Size()
-	sectorRank, err := rankOfRows(size - 5)
+	sectorRank, err := rankOfRows(size - seg.Sector)
 	if err != nil {
 		return CoalesceScore{}, err
 	}
-	lineRank, err := rankOfRows(size - 7)
+	lineRank, err := rankOfRows(size - seg.Line)
 	if err != nil {
 		return CoalesceScore{}, err
 	}

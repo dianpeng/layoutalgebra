@@ -40,11 +40,15 @@ func trailingLaneNames(hw Vector, laneBits int) ([]string, error) {
 	return out, nil
 }
 
-// GmemOptimize runs the GMEM coalescing pipeline end to end: derives the
-// bijective transformation M from hardware coordinates to data logical
-// coordinates, applies it, shifts into byte space, and certifies the
-// lane-restricted coalescing objective on the final offset vector.
+// GmemOptimize runs the GMEM coalescing pipeline end to end with the NVIDIA
+// default segments (32B sectors, 128B lines). Use GmemOptimizeWith to
+// specify a different architecture's segment boundaries.
 func GmemOptimize(hw Vector, axes []GmemAxis, laneBits, dtypeSize int) (*GmemResult, error) {
+	return GmemOptimizeWith(hw, axes, laneBits, dtypeSize, GmemSegmentNvidia)
+}
+
+// GmemOptimizeWith is GmemOptimize with explicit GMEM segment boundaries.
+func GmemOptimizeWith(hw Vector, axes []GmemAxis, laneBits, dtypeSize int, seg Segment) (*GmemResult, error) {
 	plan, err := GmemCoalescingMap(hw, axes, laneBits, dtypeSize)
 	if err != nil {
 		return nil, err
@@ -58,7 +62,7 @@ func GmemOptimize(hw Vector, axes []GmemAxis, laneBits, dtypeSize int) (*GmemRes
 	if err != nil {
 		return nil, err
 	}
-	score, err := ScoreCoalescing(strided, laneNames)
+	score, err := ScoreCoalescingWith(strided, laneNames, seg)
 	if err != nil {
 		return nil, fmt.Errorf("GmemOptimize: score: %w", err)
 	}
