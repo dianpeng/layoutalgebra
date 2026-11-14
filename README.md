@@ -63,6 +63,54 @@ res, err := f2.SmemOptimize(hw, dataCoord, 2 /* float */, f2.Bank{
 Both pipelines emit the **same kind of artifact** — the offset vector — so
 **one code generator serves both** memory hierarchies.
 
+## Pipeline API
+
+### `GmemOptimize` — GMEM coalescing
+
+```go
+func GmemOptimize(hw Vector, axes []GmemAxis, laneBits, dtypeSize int) (*GmemResult, error)
+func GmemOptimizeWith(hw Vector, axes []GmemAxis, laneBits, dtypeSize int, seg Segment) (*GmemResult, error)
+```
+
+Derives the bijective transformation `M` (hardware → data logical
+coordinates) with the provably optimal greedy — lane bits into the lowest
+logical positions — applies it, shifts into byte space, and certifies the
+lane-restricted coalescing objective. Returns:
+
+| Field | Meaning |
+|---|---|
+| `Offset` | final offset-space `Vector` for code generation |
+| `Plan` | `*CoalescePlan`: `Matrix` (M), `Innermost` axis, `Span`, `LaneBitsFit`/`LaneBitsSpill`, `Perfect` |
+| `Score` | `CoalesceScore{LineRank, SectorRank}` — the warp touches `2^LineRank` lines and `2^SectorRank` sectors; sectors are the transaction cost |
+
+The score is certified against the **volume floors** `sectorRank ≥ laneBits
++ dtypeSize − Sector` and `lineRank ≥ max(0, laneBits + dtypeSize − Line)`;
+both met = perfect coalescing. Segment boundaries default to
+`GmemSegmentNvidia = {Sector: 5, Line: 7}` (32B sectors, 128B lines);
+`GmemOptimizeWith` takes an explicit `Segment` for other architectures.
+
+### `SmemOptimize` — SMEM bank-conflict elimination
+
+```go
+func SmemOptimize(hw Vector, dataCoord Vector, dtypeSize int, bank Bank) (*SmemResult, error)
+```
+
+Maps hardware coordinates to the logical data layout, shifts into byte
+space, and applies the XOR swizzle. `dataCoord` selects the mode by shape:
+
+- **Same size as `hw`** — routed through `MapAccess`: a permutation of the
+  hardware coordinates (bijective by construction).
+- **Different size** — used directly as the logical coordinate expressions
+  over the hw basis: the rectangular/injective patterns (multi-thread per
+  element, sub-tile access) that `MapAccess` cannot express, and the cases
+  where swizzling actually has work to do.
+
+Returns `Offset` (final vector for codegen) and `Swizzled`. Error
+semantics follow the conservative contract: `SwizzleErrorSaturated` is a
+**success** — the bank slice is already fully ranked (conflict-free) and the
+strided layout is returned unchanged with `Swizzled=false`; other failures
+(e.g. `SwizzleErrorNoFreeDegree`) propagate as errors.
+
 ### Manual composition
 
 Every pipeline stage is also a public building block:
@@ -72,6 +120,8 @@ mapped, _  := f2.MapAccess(hw, dataCoord)              // bijective permutation
 strided, _ := f2.StrideMap(shape, mapped, 2)           // byte-space shift
 swizzled, _ := f2.SwizzleMap(bank, strided)            // XOR bank swizzle
 
+plan, _  := f2.GmemCoalescingMap(hw, axes, 5, 2)       // the coalescing M + report
+score, _ := f2.ScoreCoalescingWith(offset, lanes, seg) // certified objective
 cm, _ := swizzled.CoeffMatAll()                        // linearize: A·x
 rank, _ := f2.RankConstMat(cm)                         // certify bijectivity
 fmt.Print(swizzled.Dump())                             // "bit 0: ...\n..."
@@ -96,13 +146,13 @@ actually addresses memory:
 1. **Hardware coordinates** — the user provides the coordinate vector:
    lane bits, warp bits, block bits, named and ordered MSB-first.
 2. **Layout maps** — a chain of F₂-linear transformations from hardware
-   coordinates to the final offset space:
-   - *Access / coalescing map* `M`: hardware → logical data coordinates
-     (bijective permutation — `MapAccess`, `GmemCoalescingMap`)
-   - *Stride map*: logical coordinates → byte space (`StrideMap`)
-   - *Swizzle map* (SMEM only): XOR bank-conflict elimination
-     (`SwizzleMap` — a bijective involution: applying it twice restores
-     the input)
+   coordinates to the final offset space, composed by the two pipeline
+   entry points:
+   - *GMEM*: `GmemCoalescingMap` (M: hardware → logical data coordinates,
+     bijective permutation) → `StrideMap` → certified `ScoreCoalescing`
+   - *SMEM*: `MapAccess` (hardware → logical data coordinates) →
+     `StrideMap` → `SwizzleMap` — the swizzle is a bijective involution:
+     applying it twice restores the input
 3. **Code generation** — interpret the final offset vector into emitted
    index arithmetic. Each bit's expression is already in canonical form
    (fold-complete, order-sorted), so equal subexpressions print and emit
@@ -150,8 +200,8 @@ are not.
 | Canonical enumeration | all depth-≤4 expressions fold to canonical form, idempotently | `canon_test.go` |
 | Termination witnesses | every rule application decreases its witness | `convergence_test.go` |
 | Confluence | permuted rule orders → identical canonical forms | `convergence_test.go` |
-| CUDA reference scenarios | warp access (saturated bank), strided access (swizzle repair 3→5), full-pipeline runs | `layout_cuda_test.go`, `pipeline_test.go` |
-| Full suite | 71 test functions, `go vet` clean, `gofmt` clean, `-count=20` stable | — |
+| CUDA reference scenarios | warp access (saturated bank), strided access (swizzle repair 3→5), full-pipeline runs, custom-segment scoring | `layout_cuda_test.go`, `pipeline_test.go`, `gmem_coalescing_map_test.go` |
+| Full suite | 73 test functions, `go vet` clean, `gofmt` clean, `-count=20` stable | — |
 
 Run it:
 
@@ -191,15 +241,3 @@ offsets (handled by the emitter as integer adds on top of the linear part),
 non-power-of-2 pitches (multiplication by non-power-of-2 constants involves
 carries — outside F₂-linearity), and symbolic-coefficient rank (bijective
 cores are constant-coefficient by design; symbols live in the stride class).
-
-Next per the requirements ledger: `UTIL-03` (equivalence checker) and
-`UTIL-04` (code generation — the offset-vector interpreter), plus the
-extraction hardening sweep (remaining assertion sites converted to errors).
-
-## Development model
-
-Authored by [dianpeng](https://github.com/dianpeng); Claude assists with
-bug fixes, tests, and utilities on request. Conventions: conventional
-commits, stdlib-only tests (table-driven, exact assertions), zero
-third-party dependencies, and every fix ships with a test that fails
-without it. Planning artifacts live in `.planning/` (GSD workflow).
