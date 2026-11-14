@@ -1,0 +1,6 @@
+# Claude tooling directory (local settings, locks, credentials — never commit)
+.claude/
+
+# editor swap files
+*.swp
+*~
