@@ -86,6 +86,7 @@ Recent decisions affecting current work:
 | 261113-j8r | Expr interface String() promotion — native fmt dump, dumpExpr dispatcher removed | 2026-11-13 | bbe4411 | Complete | [261113-j8r-add-string-to-the-expr-interface-so-expr](./quick/261113-j8r-add-string-to-the-expr-interface-so-expr/) |
 | 261113-jpv | Fold normalization bare-variable merge — fixes x + S*x silent coefficient drop; certificate-soundness restored | 2026-11-13 | d2b8fb3 | Verified | [261113-jpv-extend-fold-normalization-rule-to-cover-](./quick/261113-jpv-extend-fold-normalization-rule-to-cover-/) |
 | 261117-f2a | Make new internal/subgroupchain Z/k algebra package compile and work — stride + access mappings, full-consumption validation, depth-2 nesting fix, review round C1/H1/M1-M3/L1-L4 | 2026-11-17 | 1acdda8 | Verified | [20261117-make-subgroupchain-compile](./quick/20261117-make-subgroupchain-compile/) |
+| 261117-lay | Rename module to layoutalgebra + universal Algebra interface scaffolding (Problem/Mapping/Offset, registry; adapters deferred per algebra) | 2026-11-17 | 033eff2 | Verified | [20261117-rename-layoutalgebra](./quick/20261117-rename-layoutalgebra/) |
 
 ## Session Continuity
 
