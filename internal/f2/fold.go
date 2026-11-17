@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/dianpeng/f2algebra/internal/check"
+	"github.com/dianpeng/layoutalgebra/internal/check"
 )
 
 // --------------------------------------------------------------------------------------

@@ -1,3 +1,3 @@
-module github.com/dianpeng/f2algebra
+module github.com/dianpeng/layoutalgebra
 
 go 1.26.2

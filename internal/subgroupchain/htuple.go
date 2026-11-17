@@ -1,7 +1,7 @@
 package subgroupchain
 
 import (
-	"github.com/dianpeng/f2algebra/internal/check"
+	"github.com/dianpeng/layoutalgebra/internal/check"
 )
 
 // HTuple, ie heirachy tuples. For each element of HTuple, it could be a leaf expression

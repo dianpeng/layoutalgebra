@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dianpeng/f2algebra/internal/check"
-	"github.com/dianpeng/f2algebra/internal/common"
+	"github.com/dianpeng/layoutalgebra/internal/check"
+	"github.com/dianpeng/layoutalgebra/internal/common"
 )
 
 // Swizzle bank analysis against the the F2 vector

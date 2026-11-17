@@ -3,7 +3,7 @@ package subgroupchain
 import (
 	"fmt"
 
-	"github.com/dianpeng/f2algebra/internal/common"
+	"github.com/dianpeng/layoutalgebra/internal/common"
 )
 
 // Mapping a coordinate back to a 1D codomain, interpreted as **byte oriented** offset

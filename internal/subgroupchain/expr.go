@@ -1,7 +1,7 @@
 package subgroupchain
 
 import (
-	"github.com/dianpeng/f2algebra/internal/common"
+	"github.com/dianpeng/layoutalgebra/internal/common"
 )
 
 // Symbolic expression part of subgroupchain

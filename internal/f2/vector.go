@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/dianpeng/f2algebra/internal/check"
+	"github.com/dianpeng/layoutalgebra/internal/check"
 )
 
 // --------------------------------------------------------------------------------------
 //
-// Representation of bitvector in f2algebra. A vector contains a list of expression
+// Representation of bitvector in layoutalgebra. A vector contains a list of expression
 //
 // (1) Expression is a normal F2 allowed expression, which allows 2 operators
 // (2) Expression can be a constant, ie leaf nodes

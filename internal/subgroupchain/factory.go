@@ -3,8 +3,8 @@ package subgroupchain
 import (
 	"fmt"
 
-	"github.com/dianpeng/f2algebra/internal/check"
-	"github.com/dianpeng/f2algebra/internal/common"
+	"github.com/dianpeng/layoutalgebra/internal/check"
+	"github.com/dianpeng/layoutalgebra/internal/common"
 )
 
 // Env carries the per-analysis context: the node factory used to allocate

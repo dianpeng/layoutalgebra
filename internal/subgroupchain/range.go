@@ -1,7 +1,7 @@
 package subgroupchain
 
 import (
-	"github.com/dianpeng/f2algebra/internal/check"
+	"github.com/dianpeng/layoutalgebra/internal/check"
 )
 
 type Range interface {

@@ -1,27 +1,38 @@
 <!-- GSD:project-start source:PROJECT.md -->
 ## Project
 
-**F2 Algebra — CUDA Layout Symbolic Analysis**
+**Layout Algebra — CUDA Layout Symbolic Analysis**
 
-A Go library for symbolic analysis of CUDA layout calculation, written as a basic F₂ algebra.
-The user sets up an F₂ algebra interpreter parametrized by symbolic tile dimensions (M, N); the
-library performs symbolic calculation to generate a mapping from **hardware coordinates**
-(threadIdx.x/y/z bits) to a **final memory offset** in a tile. The result is a *vector* — one
-F₂ expression per output offset bit, over the input coordinate bits. From that vector the user
-generates code directly by interpreting it.
+A Go library of multiple symbolic layout algebras for GPU memory analysis, unified behind a
+universal `layoutalgebra.Algebra` interface (repo root) that upper layers integrate against.
+The module is `github.com/dianpeng/layoutalgebra`.
+
+Implementations:
+- **F₂ algebra** (`internal/f2`) — bit-level analysis over the field with two elements; power-of-2
+  tiles and strides. The user sets up an F₂ algebra interpreter parametrized by symbolic tile
+  dimensions (M, N); the library generates a mapping from **hardware coordinates**
+  (threadIdx.x/y/z bits) to a **final memory offset** in a tile — a *vector*, one F₂ expression per
+  output offset bit. From that vector the user generates code directly by interpreting it.
+- **Z/k sub-group chain algebra** (`internal/subgroupchain`) — CuTE-style hierarchical tuples over
+  arbitrary tile factorizations; bag-of-variables access mapping plus stride mapping. See its
+  README for status, implemented conventions, and pending work (swizzle, folding engine, GMEM/SMEM
+  optimization — user-implemented).
+
+Planned (not started): per-algebra AST/code generation backends behind the universal interface —
+the integration point for that layer.
 
 Claude's role here is **passive assistance**: the user writes the code and calls Claude in for
 (1) finding bugs and logical issues, (2) completing code — fixing bugs and writing comprehensive
 unit tests, (3) utility features (expression dumpers, matrix/vector printers, etc.).
 
 **Core Value:** Given hardware coordinate bits, correctly and verifiably derive the symbolic bit-level mapping
-to a tile offset as an F₂ vector the user can interpret into generated code.
+to a tile offset that the user can interpret into generated code.
 
 ### Constraints
 
 - **Tech stack**: Go stdlib only for tests — no external test frameworks or assertion libraries.
 - **Dependencies**: keep third-party imports near zero; this is a small self-contained algebra library.
-- **Authorship model**: user writes the core code; Claude fixes bugs, writes tests, and adds utilities on request — avoid rewriting user code wholesale.
+- **Authorship model**: user writes the core code (including algebra optimization passes); Claude fixes bugs, writes tests, and adds utilities on request — avoid rewriting user code wholesale.
 - **Correctness**: F₂ bit-level math is unforgiving; every bug fix and utility must come with unit tests.
 <!-- GSD:project-end -->
 

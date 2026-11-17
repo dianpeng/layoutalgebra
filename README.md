@@ -1,4 +1,53 @@
-# F2 Algebra — CUDA Layout Symbolic Analysis
+# Layout Algebra — CUDA Layout Symbolic Analysis
+
+A Go library of **symbolic layout algebras for GPU memory analysis**, unified
+behind a single interface. Each algebra derives, verifies, and optimizes the
+mapping from **hardware concurrency** (threadIdx-style lane/warp variables)
+to **tile memory offsets**, producing a symbolic artifact that a code
+generator interprets directly into index arithmetic.
+
+Implemented today:
+
+- **F₂ algebra** (`internal/f2`) — bit-level analysis over the field with two
+  elements: XOR is addition, AND is multiplication, every layout question is
+  exact linear algebra. Power-of-2 tiles and strides. See below.
+- **Z/k sub-group chain algebra** (`internal/subgroupchain`) — CuTE-style
+  hierarchical tuples (HTuple) over arbitrary tile factorizations, with
+  bag-of-variables (BoV) access mapping and stride mapping. See
+  `internal/subgroupchain/README.md`.
+
+```
+hardware concurrency ──► [ algebra ] ──► mapping/offset ──► codegen (planned)
+(lane/warp variables,     (f2 /          (opaque per        (per-algebra
+ tile shape, dtype)        subgroupchain)  algebra)          backend)
+```
+
+## Architecture
+
+The module is three layers:
+
+1. **The universal interface** (package `layoutalgebra`, repo root) —
+   `Algebra` + `Problem`/`Mapping`/`Offset` + a name registry. Upper layers
+   integrate against this interface only; they pick an implementation by name
+   or capability and drive the pipeline stages (`Access`, `StrideMap`,
+   `GmemOptimize`, `SmemOptimize`) without knowing the algebra underneath.
+2. **The algebra implementations** (`internal/f2`, `internal/subgroupchain`)
+   — each self-contained, with its own native API beside the universal one,
+   its own guarantees, and its own test suite.
+3. **Per-algebra AST/code generation** (not implemented yet) — once all
+   algebras are complete, each grows a backend that interprets its native
+   mapping artifacts into emitted index arithmetic, plugging in behind the
+   opaque `Mapping`/`Offset` handles. The universal interface is the single
+   integration point for that layer.
+
+Conventions for implementations: conservative contract (do what you can,
+`error` when you cannot — false negatives are acceptable, wrong math and
+silent failures are not); implementations never mutate the `Problem`; results
+are opaque outside the producing algebra.
+
+---
+
+# The F₂ Algebra
 
 A Go library for **symbolic analysis of GPU memory layouts in F₂ algebra**.
 It derives, verifies, and optimizes the bit-level mapping from **hardware
@@ -213,7 +262,9 @@ go build ./... && go vet ./... && go test ./... -count=1
 ## Project layout
 
 ```
-internal/f2/
+layoutalgebra (repo root)
+  doc.go / algebra.go       the universal Algebra interface + registry (integration point)
+internal/f2/                the F₂ algebra (power-of-2 tiles)
   expr.go                 expression trees, F₂ scalars, structural equality
   order.go                OTuple — the structural total order
   fold.go                 the rewrite engine (6 rules) + driver
@@ -228,13 +279,25 @@ internal/f2/
   pipeline.go             GmemOptimize / SmemOptimize — the two entry points
   dump.go                 String()/DumpPrefix/vector/matrix rendering
   theory.md               the formal model: lattice, witnesses, confluence
+internal/subgroupchain/     the Z/k sub-group chain algebra (arbitrary extents)
+internal/common/            shared numeric helpers (GCD, strides, products)
+internal/check/             invariant-assertion guards (Check/DCheck/Unreachable)
 ```
 
 ## Status
 
-Complete and verified: core F₂ algebra (expressions, fold engine), vectors
-and coefficient matrices, exact elimination, all four layout map types,
-both optimization pipelines, and the dump utilities.
+The F₂ algebra is complete and verified: core F₂ algebra (expressions, fold
+engine), vectors and coefficient matrices, exact elimination, all four layout
+map types, both optimization pipelines, and the dump utilities.
+
+The sub-group chain algebra provides its access and stride mappings with
+machine-verified bijection soundness (see its README); its GMEM/SMEM
+optimization passes and the universal-interface adapters are in progress.
+
+The universal interface (`layoutalgebra.Algebra`) and registry are in place;
+per-algebra adapters land with each algebra's optimization work, and the
+AST/code-generation layer is deliberately deferred until all algebras are
+complete.
 
 Deliberately out of scope (the F₂ model does not cover them): affine/constant
 offsets (handled by the emitter as integer adds on top of the linear part),

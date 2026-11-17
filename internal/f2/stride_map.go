@@ -3,7 +3,7 @@ package f2
 import (
 	"fmt"
 
-	"github.com/dianpeng/f2algebra/internal/check"
+	"github.com/dianpeng/layoutalgebra/internal/check"
 )
 
 // Stride mapping. Again, all expression is parametrized, working under symbolic space.
