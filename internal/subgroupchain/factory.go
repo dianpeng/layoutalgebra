@@ -131,13 +131,69 @@ func (self *Factory) Product(a ...Expr) Expr {
 	return lhs
 }
 
-func (self *Factory) coordinate(v Expr, bound int) Expr {
+// coordinate builds a radix based extraction node: (source % radix) / stride.
+// The source must be a freedom provider: Variable, Coordinate or Stride.
+//
+// Constructor canonicalization, so the coord chain stays minimal and the
+// UpperBound-monotonicity invariant holds (chasing sources, bounds never
+// decrease below the extraction window):
+//
+//   - (R1) an extraction over the source's whole window (stride 1, radix ==
+//     source bound) collapses to the source itself — eg the GMEM last-dim
+//     remap yields the bare combined Stride
+//   - (R2) a source Coordinate with stride 1 is a contiguous window
+//     [0, radix_s) of ITS source, so (src % r)/s == (src.source % r)/s for
+//     r <= radix_s — retarget through it, removing stacked windows (eg a
+//     full dedication being re-factorized)
+func (self *Factory) coordinate(source Expr, radix, stride Value) Expr {
+	switch source.(type) {
+	case *Variable, *Coordinate, *Stride:
+	default:
+		check.Check(
+			false,
+			"Coordinate source must be a Variable, Coordinate or Stride node",
+		)
+	}
+	check.Check(
+		stride >= 1,
+		fmt.Sprintf("Coordinate stride must be >= 1, got %d", stride),
+	)
+	check.Check(
+		radix >= stride && radix%stride == 0,
+		fmt.Sprintf("Coordinate radix %d is not a multiple of stride %d", radix, stride),
+	)
+	if s, ok := source.(Coord); ok {
+		check.Check(
+			Value(s.UpperBound()) >= radix,
+			fmt.Sprintf(
+				"extraction radix %d exceeds the source window %d", radix, s.UpperBound()),
+		)
+	}
+
+	// (R2) retarget through a stride-1 (contiguous window) Coordinate source
+	if s, ok := source.(*Coordinate); ok && s.Stride() == 1 && radix <= s.Radix() {
+		return self.coordinate(s.Source(), radix, stride)
+	}
+	// (R1) collapse a whole-window extraction to the source itself
+	if s, ok := source.(Coord); ok && stride == 1 && Value(s.UpperBound()) == radix {
+		return source
+	}
+
 	out := &Coordinate{
-		value:      v,
-		upperBound: Value(bound),
+		source: source,
+		radix:  radix,
+		stride: stride,
 	}
 	self.setupNode(out)
 	return out
+}
+
+// Dedicate wraps a whole variable as a Coordinate: the variable's full
+// [0, bound) range is dedicated to the returned node (radix == bound,
+// stride == 1). This is how a Variable enters the coordinate world.
+func (self *Factory) Dedicate(v *Variable) *Coordinate {
+	out := self.coordinate(v, v.UpperBound(), 1)
+	return out.(*Coordinate)
 }
 
 func (self *Factory) checkCoord(v Expr) bool {
@@ -198,28 +254,12 @@ func (self *Factory) Factorize(variable Expr, bounds []int) ([]Expr, error) {
 		prod *= bounds[idx] // notes bounds[idx] == 1 is fine for this
 	}
 
-	// identity fast path: exactly one non-trivial digit, at the bottom of the
-	// radix (stride 1, nothing above it), extracts the whole range — return
-	// the input node itself instead of wrapping it in a pointless
-	// (v % upperBound) / 1 expression
-	nonTrivial := -1
-	for idx, b := range bounds {
-		if b != 1 {
-			if nonTrivial >= 0 {
-				nonTrivial = -2 // more than one non-trivial digit
-				break
-			}
-			nonTrivial = idx
-		}
-	}
-	if nonTrivial >= 0 && stride[nonTrivial] == 1 {
-		out := make([]Expr, len(bounds))
-		out[nonTrivial] = variable
-		return out, nil
-	}
-
 	// the stride contains all strided value, with entry to be 0 indicates the variable
 	// is trivial, ie do not generate it directly
+	//
+	// each digit is a Coordinate operator: (variable % radix[idx]) / stride[idx]
+	// with bound radix[idx] / stride[idx] — even a whole-range digit (bounds
+	// [1, ub]) is a real full-dedication Coordinate node, never the raw input
 	out := make([]Expr, len(bounds))
 
 	for idx, s := range stride {
@@ -227,16 +267,7 @@ func (self *Factory) Factorize(variable Expr, bounds []int) ([]Expr, error) {
 			out[idx] = nil
 			continue
 		}
-		// current := (variable % radix[idx]) / stride[idx]
-		// if idx = 0, the % radix[idx] is skipped (variable < radix[0] by
-		// construction). Notes we always decompose the original variable, so no
-		// running remainder state is needed.
-		cur := variable
-		if idx > 0 {
-			cur = self.Binary(Mod, cur, self.Const(radix[idx]))
-		}
-		cur = self.Binary(Div, cur, self.Const(stride[idx]))
-		cur = self.coordinate(cur, bounds[idx])
+		cur := self.coordinate(variable, Value(radix[idx]), Value(s))
 
 		// attach the range so consumers (eg the access map's next dimension) can
 		// query the digit's bound without re-running analysis over the whole tree

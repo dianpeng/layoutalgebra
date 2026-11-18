@@ -9,16 +9,25 @@
     Coordinate / Stride
     - Notes, `Div` is truncating integer division; `Stride` is an opaque dot-product
       node (coordinate . stride) generated at known callsites, with compile-known shape
-    - Coordinate is an annotated factorization digit (an annotated node carrying
-      `CoordInfo`: family/name/partia/upper bound), the unit of coord analysis
+    - Coordinate is a **radix based extraction operator**: `(source % radix) / stride`
+      with bound `radix / stride`, where the source is a Variable (full or partial
+      dedication), another Coordinate (chained extraction) or a Stride (freedom pool)
+    - A raw Variable is NOT a Coord node: variables enter the coordinate world only
+      as the source of a Coordinate (`Factory.Dedicate`), so every coordinate access
+      expression is uniformly a Coordinate or Stride
+    - Constructor canonicalization: stacked stride-1 windows are flattened and
+      whole-window extractions collapse to their source, keeping chains minimal
+    - Coord chain monotonicity: chasing sources/operands, UpperBound never increases
+      (a digit never extracts beyond its source; a Stride's rank is the product of
+      its operands' bounds)
     - IR invariants: Stride operands are Coord nodes; a 1-element Stride is the
       identity (returns its operand)
   - Range analysis: monotone interval lattice (post-order data flow over the expr tree)
     - Variable -> [0, upper bound); Stride -> [0, rank); Const/Symbol -> Unknown
     - Div -> [0, ceil(U/d)); Mod -> [0, min(m, U)); Mul/Add and friends -> Unknown
   - Coordinate analysis (`AnalyzeCoord`): post-order population of CoordInfo
-    (families/names/partial) across the coord chain, incl. Variables buried under
-    factorization expressions
+    (families/names/partial) along the coord chain; terminal Coordinates read
+    their Variable source, composites merge their children
   - `Factory.Factorize` / `Factory.Split`: mixed-radix decomposition of a ranged
     variable, with an identity fast path for whole-range digits
   - `PartiteCoord`: split a coord into disjoint non-relevant / pure-relevant sides

@@ -3,6 +3,7 @@ package subgroupchain
 import (
 	"fmt"
 
+	"github.com/dianpeng/layoutalgebra/internal/check"
 	"github.com/dianpeng/layoutalgebra/internal/common"
 )
 
@@ -17,42 +18,34 @@ func (self *coordAnalysis) run(root Expr) {
 			info := coord.CoordInfo()
 			info.Reset()
 
-			if variableNode, ok := v.(*Variable); ok {
-				info.Family = []string{variableNode.Family()}
-				info.Name = []string{variableNode.Name()}
-				info.Partial = false
+			children := coord.CoordChildren()
+
+			if len(children) == 0 {
+				// chain terminal: a Coordinate sourcing a raw Variable.
+				// Notes a Stride always has operands, so only a terminal
+				// Coordinate lands here.
+				c, ok := v.(*Coordinate)
+				check.Check(ok, "chain terminal must be a Coordinate node")
+				src, ok := c.Source().(*Variable)
+				check.Check(ok, "terminal Coordinate must source a Variable")
+				info.Family = []string{src.Family()}
+				info.Name = []string{src.Name()}
+				// Partial: false only for a full dedication of the variable,
+				// ie the coordinate exhausts the variable's whole range
+				info.Partial = c.UpperBound() != src.UpperBound()
 			} else {
+				// composite: merge the children's infos, which the post-order
+				// walk has already populated
 				family := make(map[string]bool)
 				name := make(map[string]bool)
-
-				// (1) collect from direct coord children, whose info has been
-				// populated already (post-order)
-				for _, c := range coord.CoordChildren() {
-					for _, f := range c.CoordInfo().Name {
+				for _, ch := range children {
+					for _, f := range ch.CoordInfo().Name {
 						name[f] = true
 					}
-					for _, f := range c.CoordInfo().Family {
+					for _, f := range ch.CoordInfo().Family {
 						family[f] = true
 					}
 				}
-
-				// (2) a Coordinate may wrap a plain factorization expression
-				// (Binary), which is not a Coord node: scan its subtree for
-				// the underlying Variables instead
-				if coordNode, ok := v.(*Coordinate); ok {
-					Visit(
-						coordNode.Value(),
-						func(e Expr) bool { return true },
-						func(e Expr) error {
-							if varNode, ok := e.(*Variable); ok {
-								name[varNode.Name()] = true
-								family[varNode.Family()] = true
-							}
-							return nil
-						},
-					)
-				}
-
 				info.Partial = true
 				info.Family = common.Keys(family)
 				info.Name = common.Keys(name)

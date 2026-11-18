@@ -26,7 +26,7 @@ func (self *orderPost) visit(current Expr) {
 			self.visit(c)
 		}
 	case *Coordinate:
-		self.visit(node.Value())
+		self.visit(node.Source())
 	}
 	self.out = append(self.out, current)
 }
@@ -53,7 +53,7 @@ func (self *orderPre) visit(current Expr) {
 			self.visit(c)
 		}
 	case *Coordinate:
-		self.visit(node.Value())
+		self.visit(node.Source())
 	}
 }
 

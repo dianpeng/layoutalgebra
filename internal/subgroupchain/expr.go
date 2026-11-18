@@ -39,12 +39,21 @@ const (
 	// 1) Variable gives freedom source. We need to draw degree of freedom from a variable
 	//    A variable is essentially a space of freedom provided by user. And any fine
 	//    grained of freedom requires we use special expression to draw them from.
+	//    Notes, a Variable is NOT a Coord node: it enters the coordinate world only
+	//    as the **source** of a Coordinate, even for a full dedication.
 	//
-	// 2) Coordinate maps from a variable for specific portion of freedom. Notes, if the
-	//    Coordinate requires all freedom from the Variable, which means Coordinate is
-	//    effectively the same as Variable, we still need to map it from using Coordinate.
-	//    The Coordinate provides additionally enforcement and invariants for the analysis
-	//    framework
+	// 2) Coordinate is a radix based digit extraction from a freedom provider:
+	//
+	//        (source % radix) / stride        bound = radix / stride
+	//
+	//    where the source is one of
+	//        - Variable:   the external induction variable
+	//        - Coordinate: a chained extraction (digit of a digit)
+	//        - Stride:     a combined freedom pool
+	//
+	//    Even a trivial full dedication (the whole [0, bound) of a variable is used)
+	//    goes through a Coordinate (radix == source bound, stride == 1), so every
+	//    coordinate related access expression is uniformly a Coord node.
 	//
 	// 3) Stride performs a strided combination. Ie it always combines **MULTIPLE Coordinates**
 	//    to form new extent of shape. Notes, for roubustness, Stride is also allow to
@@ -60,16 +69,19 @@ const (
 	// 3.2) 2  -> Coordinate(%var1)
 	// 3.3) 20 -> Stride(Coordinate(%var1), Coordinate(%var2))
 	//
-	// Notes the above will skip the factorization expression, which is easy to figure out
-	//
 	// In the graph, the Coordinate + Stride forms sparse coorindate induction variable to
 	// exhaust the iteration space.
 	//
 	//
 	// Key invariants:
 	//
-	//   - Coordinate's operand must be Variable
-	//   - Stride's operand must be Coordinate
+	//   - Coordinate's source must be Variable, Coordinate or Stride
+	//   - Stride's operand must be a Coord node (Coordinate or Stride)
+	//   - A raw Variable is never a coordinate access expression; it only appears
+	//     as the source of a (possibly full-dedication) Coordinate
+	//   - Coord chain monotonicity: chasing CoordChildren, UpperBound never
+	//     increases — a proper digit is a strict sub-range of its source, and a
+	//     Stride's rank is the product of its operands' bounds
 	//
 	// ------------------------------------------------------------------------------------
 	KindCoordinate
@@ -258,9 +270,11 @@ type Var struct {
 	u      int
 }
 
+// Variable is an external induction variable, ie a freedom provider. It is an
+// Expr but deliberately NOT a Coord: coordinate accesses go through Coordinate
+// nodes, with the Variable as their extraction source.
 type Variable struct {
 	exprNode
-	coordNode
 	v Var
 }
 
@@ -290,11 +304,20 @@ type Binary struct {
 //   - Coordinatge
 //
 // 2) The coordinate mapper is essentially setup as: (%var % stride) / divider
+// Coordinate is a radix based digit extraction from a freedom provider:
+//
+//	(source % radix) / stride      with bound radix / stride
+//
+// The source is a Variable, another Coordinate, or a Stride (a freedom pool).
+// Even a full dedication (the whole [0, bound) of the source) is expressed as
+// a Coordinate with radix == source bound and stride == 1, so all coordinate
+// access expressions are uniformly Coord nodes.
 type Coordinate struct {
 	exprNode
 	coordNode
-	value      Expr
-	upperBound Value // cached here, this will be generated when factorize
+	source Expr  // freedom provider: *Variable, *Coordinate or *Stride
+	radix  Value // mod mask
+	stride Value // div scale
 }
 
 // Stride operator, this is the special one that will be generated on the fly. A stride
@@ -348,26 +371,38 @@ func (self *Stride) CoordChildren() []Coord {
 	return o
 }
 
-func (self *Coordinate) Kind() Kind { return KindCoordinate }
+func (self *Coordinate) Kind() Kind    { return KindCoordinate }
+func (self *Coordinate) Source() Expr  { return self.source }
+func (self *Coordinate) Radix() Value  { return self.radix }
+func (self *Coordinate) Stride() Value { return self.stride }
+
+// UpperBound is derived from the extraction spec (radix / stride), a single
+// source of truth — there is no cached bound to drift out of sync.
+func (self *Coordinate) UpperBound() Value { return self.radix / self.stride }
+
 func (self *Coordinate) IsEqual(that Expr) bool {
 	t, ok := that.(*Coordinate)
 	if !ok {
 		return false
 	}
-	return self.upperBound == t.upperBound && self.value.IsEqual(t.value)
+	return self.radix == t.radix && self.stride == t.stride && self.source.IsEqual(t.source)
 }
-func (self *Coordinate) Value() Expr       { return self.value }
-func (self *Coordinate) UpperBound() Value { return self.upperBound }
 
-// CoordChildren returns the coord chain under this node. Notes the wrapped
-// value may be a plain factorization expression (Binary), which is not a Coord
-// node; in that case this node is effectively a leaf of the coord chain and
-// coordinate analysis scans the value subtree for Variables instead.
+// CoordChildren returns the coord chain under this node. The chain ends at a
+// Coordinate whose source is a raw Variable (a full or partial dedication of
+// that variable); the Variable itself is not a Coord node.
 func (self *Coordinate) CoordChildren() []Coord {
-	if IsCoord(self.value) {
-		return []Coord{self.value.(Coord)}
+	if c, ok := self.source.(Coord); ok {
+		return []Coord{c}
 	}
 	return nil
+}
+
+// IsFullDedication reports whether this coordinate dedicates the entire range
+// of its source (stride 1 over the full radix window).
+func (self *Coordinate) IsFullDedication() bool {
+	src, ok := self.source.(*Variable)
+	return ok && self.UpperBound() == src.UpperBound()
 }
 
 func (self *Variable) Kind() Kind { return KindVariable }
@@ -412,7 +447,6 @@ func (self *Variable) IsEqual(that Expr) bool {
 	}
 	return self.v.Same(t.v)
 }
-func (self *Variable) CoordChildren() []Coord { return nil }
 
 func (self *Const) Value() Value { return self.value }
 func (self *Const) IsEqual(that Expr) bool {
@@ -469,7 +503,7 @@ func Replace(root Expr, r []Replacement) Expr {
 				out = append(out, &node.coord[idx])
 			}
 		case *Coordinate:
-			out = append(out, &node.value)
+			out = append(out, &node.source)
 		}
 		return out
 	}

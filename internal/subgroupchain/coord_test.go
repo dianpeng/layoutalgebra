@@ -10,9 +10,24 @@ func TestCoordinateNodeBasics(t *testing.T) {
 	env := *NewEnv()
 	f := env.Factory
 	v := f.Variable("lane", "lane", 32)
-	AnalyzeRange(v)
+	dv := f.Dedicate(v)
+	AnalyzeRange(dv)
 
-	digits, err := f.Factorize(v, []int{8, 4})
+	if !IsCoord(dv) {
+		t.Fatalf("dedicated variable is not a Coord")
+	}
+	if dv.Kind() != KindCoordinate {
+		t.Errorf("dedication kind = %d, want KindCoordinate", dv.Kind())
+	}
+	if !dv.IsFullDedication() {
+		t.Error("Dedicate must produce a full dedication")
+	}
+	// a raw Variable is NOT a Coord anymore
+	if IsCoord(v) {
+		t.Error("raw Variable must not be a Coord node")
+	}
+
+	digits, err := f.Factorize(dv, []int{8, 4})
 	if err != nil {
 		t.Fatalf("Factorize failed: %v", err)
 	}
@@ -27,10 +42,28 @@ func TestCoordinateNodeBasics(t *testing.T) {
 		if int(c.UpperBound()) != []int{8, 4}[i] {
 			t.Errorf("digit %d upper bound = %d, want %d", i, c.UpperBound(), []int{8, 4}[i])
 		}
+		// spec consistency: bound == radix / stride
+		if c.UpperBound() != c.Radix()/c.Stride() {
+			t.Errorf("digit %d: bound %d != radix/stride %d", i, c.UpperBound(), c.Radix()/c.Stride())
+		}
 	}
 
-	// IsEqual: same bound + same value expression
-	d2, _ := f.Factorize(v, []int{8, 4})
+	// radix spec: 32 = 8 * 4 — high digit (lane/4) is radix 32 stride 4, low
+	// digit (lane%4) is radix 4 stride 1. Notes the digits retarget the raw
+	// variable directly (the full dedication is flattened by the factory),
+	// so the chain terminates immediately
+	if d0 := digits[0].(*Coordinate); d0.Radix() != 32 || d0.Stride() != 4 {
+		t.Errorf("digit0 spec = (%d, %d), want (32, 4)", d0.Radix(), d0.Stride())
+	}
+	if src, ok := digits[0].(*Coordinate).Source().(*Variable); !ok || src.Name() != "lane" {
+		t.Errorf("digit0 source = %T, want the lane Variable", digits[0].(*Coordinate).Source())
+	}
+	if d1 := digits[1].(*Coordinate); d1.Radix() != 4 || d1.Stride() != 1 {
+		t.Errorf("digit1 spec = (%d, %d), want (4, 1)", d1.Radix(), d1.Stride())
+	}
+
+	// IsEqual: same spec + same source
+	d2, _ := f.Factorize(dv, []int{8, 4})
 	if !digits[0].IsEqual(d2[0]) {
 		t.Error("structurally equal coordinates reported unequal")
 	}
@@ -38,11 +71,14 @@ func TestCoordinateNodeBasics(t *testing.T) {
 		t.Error("different coordinates reported equal")
 	}
 
-	// evaluation: Coordinate value == underlying expression value
+	// evaluation: (lane % radix) / stride
 	for x := 0; x < 32; x++ {
 		envm := map[string]int{"lane": x}
 		if got := evalExpr(t, digits[0], envm); got != x/4 {
 			t.Fatalf("x=%d: digit0 = %d, want %d", x, got, x/4)
+		}
+		if got := evalExpr(t, digits[1], envm); got != x%4 {
+			t.Fatalf("x=%d: digit1 = %d, want %d", x, got, x%4)
 		}
 	}
 }
@@ -51,10 +87,11 @@ func TestFactorySplit(t *testing.T) {
 	env := *NewEnv()
 	f := env.Factory
 	v := f.Variable("lane", "lane", 24)
-	AnalyzeRange(v)
+	dv := f.Dedicate(v)
+	AnalyzeRange(dv)
 
 	// 24 = 6 * 4
-	lhs, rhs, err := f.Split(v, 6, 4)
+	lhs, rhs, err := f.Split(dv, 6, 4)
 	if err != nil {
 		t.Fatalf("Split failed: %v", err)
 	}
@@ -68,20 +105,24 @@ func TestFactorySplit(t *testing.T) {
 		}
 	}
 
-	// trivial high side yields nil lhs
-	lhs2, rhs2, err := f.Split(v, 1, 24)
+	// trivial high side yields nil lhs; the low side is a FULL DEDICATION
+	// coordinate now (never the raw input node)
+	lhs2, rhs2, err := f.Split(dv, 1, 24)
 	if err != nil {
 		t.Fatalf("Split failed: %v", err)
 	}
 	if lhs2 != nil {
 		t.Errorf("lhs = %v, want nil", lhs2)
 	}
+	if !IsCoord(rhs2) {
+		t.Errorf("rhs = %T, want a Coord", rhs2)
+	}
 	if got := evalExpr(t, rhs2, map[string]int{"lane": 7}); got != 7 {
 		t.Errorf("rhs(7) = %d, want 7", got)
 	}
 
 	// mismatched product is an error
-	if _, _, err := f.Split(v, 4, 4); err == nil {
+	if _, _, err := f.Split(dv, 4, 4); err == nil {
 		t.Error("Split with mismatched product: expected error")
 	}
 }
@@ -98,9 +139,7 @@ func TestAnalyzeCoordFamilies(t *testing.T) {
 		t.Fatalf("Access failed: %v", err)
 	}
 
-	// dim 0 is the whole warp variable, wrapped in a Coordinate node by
-	// Factorize (pure warp family; Partial is true for any Coordinate/Stride
-	// composite by definition)
+	// dim 0 is the whole warp variable, as a full-dedication Coordinate
 	dim0, err := AnalyzeCoord(coord.Index(0).Leaf())
 	if err != nil {
 		t.Fatalf("AnalyzeCoord failed: %v", err)
@@ -110,6 +149,13 @@ func TestAnalyzeCoordFamilies(t *testing.T) {
 	}
 	if dim0.CoordInfo().Name[0] != "warp" {
 		t.Errorf("dim0 names = %v, want [warp]", dim0.CoordInfo().Name)
+	}
+	if dim0.CoordInfo().Partial {
+		t.Error("full dedication reported Partial")
+	}
+	c, ok := dim0.(*Coordinate)
+	if !ok || !c.IsFullDedication() {
+		t.Error("dim0 should be a full-dedication Coordinate")
 	}
 
 	// dim 1 should be the lane variable (pure lane family)
@@ -185,21 +231,18 @@ func coordBounds(list []Coord) []int {
 func TestPartiteCoordPureSubtreeKeptWhole(t *testing.T) {
 	env := *NewEnv()
 	f := env.Factory
-	a := f.Variable("warp", "a", 4)
-	b := f.Variable("lane", "b", 2)
+	a := f.Dedicate(f.Variable("warp", "a", 4))
+	b := f.Dedicate(f.Variable("lane", "b", 2))
+	c := f.Dedicate(f.Variable("lane", "c", 2))
 
-	// Stride([a4, Stride?]) — build mixed: Stride([a4, b2]) with a pure-relevant
-	// subtree buried under another Stride: Stride([a4, Stride([b2])]) is the
-	// identity for the inner, so use Stride([a4, c]) where c = Stride of b with
-	// a second lane var
-	c := f.Variable("lane", "c", 2)
+	// mixed: Stride([a4, Stride([b2, c2])]) with a pure-relevant subtree
 	bc := env.Factory.StrideCoord([]Coord{b, c}).(Coord) // pure lane, bound 4
 	mixed := env.Factory.StrideCoord([]Coord{a, bc}).(*Stride)
 	AnalyzeRange(mixed)
 	AnalyzeCoord(mixed)
 
 	rest, relevant := PartiteCoord(mixed, "lane")
-	if len(rest) != 1 || rest[0] != Coord(a) {
+	if len(rest) != 1 || rest[0] != a {
 		t.Errorf("rest = %v, want [a]", rest)
 	}
 	// pure-relevant subtree must stay whole, not be exploded into leaves
@@ -208,12 +251,45 @@ func TestPartiteCoordPureSubtreeKeptWhole(t *testing.T) {
 	}
 }
 
+// TestPartiteCoordDedicationOfMixed checks the B6 shape: a Coordinate that
+// dedicates a mixed Stride (eg the remapped last dim after GMEM) must be
+// partitionable — the chain continues through the source.
+func TestPartiteCoordDedicationOfMixed(t *testing.T) {
+	env := *NewEnv()
+	f := env.Factory
+	warp := f.Dedicate(f.Variable("warp", "warp", 8))
+	lane := f.Dedicate(f.Variable("lane", "lane", 4))
+
+	mixed := env.Factory.StrideCoord([]Coord{warp, lane}).(*Stride) // bound 32
+	AnalyzeRange(mixed)
+
+	// full dedication of the mixed pool: radix 32, stride 1
+	dedication := f.coordinate(mixed, 32, 1)
+	AnalyzeRange(dedication)
+	va, err := AnalyzeCoord(dedication)
+	if err != nil {
+		t.Fatalf("AnalyzeCoord failed: %v", err)
+	}
+	if len(va.CoordInfo().Family) != 2 {
+		t.Fatalf("dedication families = %v, want 2", va.CoordInfo().Family)
+	}
+
+	// partition must recurse through the dedication into the pool pieces
+	rest, relevant := PartiteCoord(va, "lane")
+	if common.Product(coordBounds(rest)...) != 8 {
+		t.Errorf("rest product = %d, want 8", common.Product(coordBounds(rest)...))
+	}
+	if common.Product(coordBounds(relevant)...) != 4 {
+		t.Errorf("relevant product = %d, want 4", common.Product(coordBounds(relevant)...))
+	}
+}
+
 func TestReplaceInsideCoordIR(t *testing.T) {
 	env := *NewEnv()
 	f := env.Factory
-	a := f.Variable("warp", "a", 4)
-	b := f.Variable("lane", "b", 2)
-	c := f.Variable("warp", "c", 2)
+	a := f.Dedicate(f.Variable("warp", "a", 4))
+	b := f.Dedicate(f.Variable("lane", "b", 2))
+	c := f.Dedicate(f.Variable("warp", "c", 2))
 
 	// dim = Stride([a4, Stride([b2, c2])]) — replacement target is b, nested
 	inner := env.Factory.StrideCoord([]Coord{b, c}).(*Stride)
@@ -247,12 +323,90 @@ func TestReplaceInsideCoordIR(t *testing.T) {
 	}
 
 	// replacement fires once per Old node identity
-	x1 := f.Variable("warp", "x1", 2)
-	x2 := f.Variable("warp", "x2", 2)
+	x1 := f.Dedicate(f.Variable("warp", "x1", 2))
+	x2 := f.Dedicate(f.Variable("warp", "x2", 2))
 	pair := env.Factory.StrideCoord([]Coord{x1, x2}).(*Stride)
 	out2 := Replace(pair, []Replacement{{Old: x1, New: c}})
 	got2 := out2.(*Stride)
 	if got2.Coord()[0] != Expr(c) || got2.Coord()[1] != Expr(x2) {
 		t.Fatalf("single replacement wrong: %v", got2.Coord())
+	}
+}
+
+// TestCoordChainInvariants verifies the structural IR invariants on real
+// layouts (pre and post GMEM):
+//   - every coordinate access expression is a Coord (no raw Variable leaves)
+//   - Coordinate specs are consistent (stride >= 1, radix % stride == 0,
+//     bound == radix/stride) and never extract beyond their source
+//   - coord chain bounds are non-increasing (monotonicity)
+func TestCoordChainInvariants(t *testing.T) {
+	env := *NewEnv()
+	f := env.Factory
+	lane := f.Variable("lane", "lane", 32)
+	warp := f.Variable("warp", "warp", 8)
+	tile := NewConstHTuple([]Value{8, 32})
+
+	coord, err := Access(env, []*Variable{lane, warp}, tile)
+	if err != nil {
+		t.Fatalf("Access failed: %v", err)
+	}
+	layout := &Layout{Coordinate: coord, Shape: tile}
+	if err := GMem(env, GMemCoalesce{ByteSize: 32, VariableFamily: "lane"}, 4, layout); err != nil {
+		t.Fatalf("GMem failed: %v", err)
+	}
+
+	// check verifies, for each coord node, that its bound never exceeds the
+	// window of the freedom it draws from: a Coordinate's bound <= its
+	// source's bound, and a Stride's every operand bound <= its rank. Chasing
+	// the coord chain downward, bounds are therefore non-increasing.
+	var checkNode func(e Expr)
+	checkNode = func(e Expr) {
+		switch n := e.(type) {
+		case *Variable:
+			return // freedom provider, outside the coord chain
+		case *Coordinate:
+			if !IsCoord(n) {
+				t.Errorf("Coordinate is not a Coord")
+			}
+			if n.Stride() < 1 || n.Radix()%n.Stride() != 0 {
+				t.Errorf("inconsistent spec: radix=%d stride=%d", n.Radix(), n.Stride())
+			}
+			if n.UpperBound() != n.Radix()/n.Stride() {
+				t.Errorf("bound %d != radix/stride %d", n.UpperBound(), n.Radix()/n.Stride())
+			}
+			if src, ok := n.Source().(Coord); ok {
+				if int(n.UpperBound()) > int(src.UpperBound()) {
+					t.Errorf("chain monotonicity violated: %d > source %d",
+						n.UpperBound(), src.UpperBound())
+				}
+			}
+			checkNode(n.Source())
+		case *Stride:
+			rank := 1
+			for _, ch := range n.Coord() {
+				cc, ok := ch.(Coord)
+				if !ok {
+					t.Fatalf("Stride operand is not a Coord: %T", ch)
+				}
+				if int(cc.UpperBound()) > n.Rank() {
+					t.Errorf("stride operand %d exceeds rank %d", cc.UpperBound(), n.Rank())
+				}
+				rank *= int(cc.UpperBound())
+			}
+			if rank != n.Rank() {
+				t.Errorf("stride rank %d != product of operands %d", n.Rank(), rank)
+			}
+			for _, ch := range n.Coord() {
+				checkNode(ch)
+			}
+		}
+	}
+
+	for i := 0; i < layout.Coordinate.Size(); i++ {
+		v := layout.Coordinate.Index(i)
+		if !v.IsLeaf() || !IsCoord(v.Leaf()) {
+			t.Fatalf("dim %d is not a coordinate access expression", i)
+		}
+		checkNode(v.Leaf())
 	}
 }

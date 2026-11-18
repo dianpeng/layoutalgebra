@@ -24,9 +24,11 @@ func TestFactoryNodeBasics(t *testing.T) {
 	}
 
 	v2 := f.Variable("warp", "warp1", 3)
+	dv := f.Dedicate(v)
+	dv2 := f.Dedicate(v2)
 	s := f.Stride([]StrideOffset{
-		{CoordinateExpression: v, UpperBound: 14},
-		{CoordinateExpression: v2, UpperBound: 3},
+		{CoordinateExpression: dv, UpperBound: 14},
+		{CoordinateExpression: dv2, UpperBound: 3},
 	})
 	strideNode, ok := s.(*Stride)
 	if !ok {
@@ -47,8 +49,8 @@ func TestFactoryNodeBasics(t *testing.T) {
 	}
 
 	// single-element Stride is the identity (returns the coordinate itself)
-	identity := f.Stride([]StrideOffset{{CoordinateExpression: v, UpperBound: 14}})
-	if !identity.IsEqual(v) {
+	identity := f.Stride([]StrideOffset{{CoordinateExpression: dv, UpperBound: 14}})
+	if !identity.IsEqual(dv) {
 		t.Errorf("1-element Stride = %v, want the coordinate itself", identity)
 	}
 
@@ -99,17 +101,19 @@ func TestIsEqual(t *testing.T) {
 
 	// notes: 1-element Stride is the identity (returns the coordinate), so
 	// stride-equality tests use 2-element strides
-	v4 := f.Variable("warp", "warp9", 3)
+	dv1 := f.Dedicate(v1)
+	dv2e := f.Dedicate(v2)
+	v4 := f.Dedicate(f.Variable("warp", "warp9", 3))
 	s1 := f.Stride([]StrideOffset{
-		{CoordinateExpression: v1, UpperBound: 14},
+		{CoordinateExpression: dv1, UpperBound: 14},
 		{CoordinateExpression: v4, UpperBound: 3},
 	})
 	s2 := f.Stride([]StrideOffset{
-		{CoordinateExpression: v2, UpperBound: 14},
+		{CoordinateExpression: dv2e, UpperBound: 14},
 		{CoordinateExpression: v4, UpperBound: 3},
 	})
 	s3 := f.Stride([]StrideOffset{
-		{CoordinateExpression: v1, UpperBound: 7},
+		{CoordinateExpression: dv1, UpperBound: 7},
 		{CoordinateExpression: v4, UpperBound: 6},
 	})
 	if !s1.IsEqual(s2) {
@@ -138,10 +142,11 @@ func TestFactoryProduct(t *testing.T) {
 func TestFactorizeBasic(t *testing.T) {
 	f := &Factory{}
 	v := f.Variable("t", "t", 32)
-	AnalyzeRange(v)
+	dv := f.Dedicate(v)
+	AnalyzeRange(dv)
 
 	// 32 = 8 * 4 mixed radix: digits are t/4 (range [0,8)) and t%4 (range [0,4))
-	digits, err := f.Factorize(v, []int{8, 4})
+	digits, err := f.Factorize(dv, []int{8, 4})
 	if err != nil {
 		t.Fatalf("Factorize failed: %v", err)
 	}
@@ -170,7 +175,7 @@ func TestFactorizeBasic(t *testing.T) {
 
 func TestFactorizeThreeRadixWithTrivialMiddle(t *testing.T) {
 	f := &Factory{}
-	v := f.Variable("t", "t", 8)
+	v := f.Dedicate(f.Variable("t", "t", 8))
 	AnalyzeRange(v)
 
 	// 8 = 2 * 1 * 4: the middle digit is trivial and must yield a nil entry
@@ -194,10 +199,11 @@ func TestFactorizeThreeRadixWithTrivialMiddle(t *testing.T) {
 
 func TestFactorizeLeadingTrivial(t *testing.T) {
 	f := &Factory{}
-	v := f.Variable("t", "t", 6)
+	v := f.Dedicate(f.Variable("t", "t", 6))
 	AnalyzeRange(v)
 
-	// 6 = 1 * 6: the high digit is trivial
+	// 6 = 1 * 6: the high digit is trivial; the low digit is a FULL DEDICATION
+	// coordinate (never the raw variable)
 	digits, err := f.Factorize(v, []int{1, 6})
 	if err != nil {
 		t.Fatalf("Factorize failed: %v", err)
@@ -216,7 +222,7 @@ func TestFactorizeErrors(t *testing.T) {
 	f := &Factory{}
 
 	// no range attached
-	bare := f.Variable("t", "t", 8)
+	bare := f.Dedicate(f.Variable("t", "t", 8))
 	if _, err := f.Factorize(bare, []int{8}); err == nil {
 		t.Error("Factorize without range: expected error")
 	}
@@ -228,14 +234,14 @@ func TestFactorizeErrors(t *testing.T) {
 	}
 
 	// pointless: upper bound 1 (range overridden to bypass construction guard)
-	one := f.Variable("t", "t1", 8)
+	one := f.Dedicate(f.Variable("t", "t1", 8))
 	one.SetRange(NewInterval(1))
 	if _, err := f.Factorize(one, []int{1, 1}); err == nil {
 		t.Error("Factorize with upper bound 1: expected error")
 	}
 
 	// mismatched product
-	v := f.Variable("t", "t2", 8)
+	v := f.Dedicate(f.Variable("t", "t2", 8))
 	AnalyzeRange(v)
 	if _, err := f.Factorize(v, []int{4, 4}); err == nil {
 		t.Error("Factorize with mismatched product: expected error")

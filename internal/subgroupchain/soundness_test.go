@@ -80,6 +80,16 @@ func TestAccessStrideMapSoundnessExhaustive(t *testing.T) {
 						n, bov, tileShape, err)
 				}
 
+				// IR uniformity: every dimension access expression is a Coord
+				// node (a Coordinate or Stride) — never a raw Variable
+				for i := 0; i < coord.Size(); i++ {
+					dim := coord.Index(i)
+					if dim.IsLeaf() && !IsCoord(dim.Leaf()) {
+						t.Fatalf("N=%d bov=%v tile=%v: dim %d is not a coordinate access expression",
+							n, bov, tileShape, i)
+					}
+				}
+
 				// 2) soundness: composed map is a bijection onto [0, N)
 				offset := mustStrideMap(t, env, &Layout{Coordinate: coord, Shape: tile}, 1)
 				seen := make([]bool, n)

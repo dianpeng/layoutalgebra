@@ -130,9 +130,8 @@ func AnalyzeRange(root Expr) {
 				return nil
 
 			case *Coordinate:
-				// a Coordinate is a factorization digit with a compile-known
-				// bound cached on the node; its value subtree is visited on
-				// its own, but the node's range comes from the cached bound
+				// a Coordinate's range is its extraction window, derived from
+				// the (radix, stride) spec: [0, radix/stride)
 				node.SetRange(NewInterval(node.UpperBound()))
 				return nil
 

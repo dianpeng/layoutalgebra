@@ -165,10 +165,12 @@ func (self *accessorMap) Run(
 }
 
 // Access maps the bag of variables (BoV) into the coordinate HTuple of the given
-// tile size, left to right.
+// tile size, left to right. Each variable enters the coordinate world as a
+// full-dedication Coordinate.
 func Access(env Env, bov []*Variable, tileSize ConstHTuple) (HTuple, error) {
 	accessor := accessorMap{}
-	return accessor.Run(env, common.Map(bov, func(x *Variable) Coord { return x }), tileSize)
+	dedicated := common.Map(bov, func(x *Variable) Coord { return env.Factory.Dedicate(x) })
+	return accessor.Run(env, dedicated, tileSize)
 }
 
 func AccessWithCoord(env Env, bov []Coord, tileSize ConstHTuple) (HTuple, error) {

@@ -53,8 +53,9 @@ func evalExpr(t *testing.T, e Expr, env map[string]int) int {
 		}
 		return total
 	case *Coordinate:
-		// a factorization digit: its value IS the underlying expression's value
-		return evalExpr(t, n.Value(), env)
+		// radix based digit extraction: (source % radix) / stride
+		src := evalExpr(t, n.Source(), env)
+		return (src % int(n.Radix())) / int(n.Stride())
 	default:
 		t.Fatalf("unknown expression node kind %d", e.Kind())
 		return 0
