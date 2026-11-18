@@ -78,14 +78,16 @@ type StrideOffset struct {
 // Stride is important for various position, since many pass will rely on Stride node
 // specifically
 func (self *Factory) Stride(listOfStride []StrideOffset) Expr {
-	allCoord := true
-	for _, v := range listOfStride {
-		if !self.checkCoord(v.CoordinateExpression) {
-			allCoord = false
-			break
-		}
-	}
-	check.Check(allCoord, "Stride operands must be Coord nodes")
+	check.Check(
+		func() bool {
+			for _, v := range listOfStride {
+				if !self.checkCoord(v.CoordinateExpression) {
+					return false
+				}
+			}
+			return true
+		}(),
+	)
 
 	if len(listOfStride) == 1 {
 		// identity case, just return the coordinate expression back
