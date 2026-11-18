@@ -129,6 +129,13 @@ func AnalyzeRange(root Expr) {
 				node.SetRange(NewInterval(node.UpperBound()))
 				return nil
 
+			case *Coordinate:
+				// a Coordinate is a factorization digit with a compile-known
+				// bound cached on the node; its value subtree is visited on
+				// its own, but the node's range comes from the cached bound
+				node.SetRange(NewInterval(node.UpperBound()))
+				return nil
+
 			case *Stride:
 				// this is a special node to perform stride operation, otherwise we will have
 				// to model coset + sub-group as part of the range analysis, and also this
@@ -172,4 +179,12 @@ func AnalyzeRange(root Expr) {
 			}
 		},
 	)
+}
+
+// helper function
+func MustGetUpperBound(x Expr) int {
+	rng := x.Range()
+	check.CheckNotNil(rng, "expression has no range attached")
+	check.Check(rng.IsInterval(), "expression range is not an interval")
+	return int(rng.(*RangeInterval).UpperBound())
 }

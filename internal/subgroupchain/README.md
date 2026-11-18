@@ -5,16 +5,38 @@
 ## Status (2026-11-17)
 
 - Working
-  - Expression IR: Variable / Const / Symbol / Binary(Add/Sub/Mul/Div/Mod) / Stride
+  - Expression IR: Variable / Const / Symbol / Binary(Add/Sub/Mul/Div/Mod) /
+    Coordinate / Stride
     - Notes, `Div` is truncating integer division; `Stride` is an opaque dot-product
       node (coordinate . stride) generated at known callsites, with compile-known shape
+    - Coordinate is an annotated factorization digit (an annotated node carrying
+      `CoordInfo`: family/name/partia/upper bound), the unit of coord analysis
+    - IR invariants: Stride operands are Coord nodes; a 1-element Stride is the
+      identity (returns its operand)
   - Range analysis: monotone interval lattice (post-order data flow over the expr tree)
     - Variable -> [0, upper bound); Stride -> [0, rank); Const/Symbol -> Unknown
     - Div -> [0, ceil(U/d)); Mod -> [0, min(m, U)); Mul/Add and friends -> Unknown
-  - `Factory.Factorize`: mixed-radix decomposition of a ranged variable
+  - Coordinate analysis (`AnalyzeCoord`): post-order population of CoordInfo
+    (families/names/partial) across the coord chain, incl. Variables buried under
+    factorization expressions
+  - `Factory.Factorize` / `Factory.Split`: mixed-radix decomposition of a ranged
+    variable, with an identity fast path for whole-range digits
+  - `PartiteCoord`: split a coord into disjoint non-relevant / pure-relevant sides
+  - `Replace`: identity-based subtree rewrite over Binary/Stride/Coordinate
   - Tuple / ConstTuple / HTuple / ConstHTuple machinery (flatten, clone, rank, ...)
   - Access mapping (BoV |-> coordinate HTuple), incl. recursive (nested) tile shapes
   - Stride mapping (coordinate HTuple |-> byte offset), dtype-size scaling
+  - GMEM optimization (`GMem`): swap-in/swap-out pass raising the relevant family's
+    occupancy of the last dimension to the coalescing window
+    - window W = min(lastDimExtent, lineBytes/dtypeSize, total family freedom V)
+    - fast path (no-op) when occupancy already covers W; otherwise draws exactly
+      W/R freedom from relevant variables in other dimensions, displacing an equal
+      amount of non-relevant freedom back (pool split + on-the-fly replacement)
+    - errors (not panics) on infeasible configs: line size not a multiple of dtype
+      size, window not divisible by current occupancy, insufficient drawable
+      freedom, nested last dimension; a failed run leaves the layout untouched
+    - property-verified: bijection preserved for all feasible (BoV, tile) pairs
+      with N <= 48, occupancy >= W on success (964 cases)
 
 - Verified
   - Soundness: Access + StrideMap compose to a **bijection** onto [0, N); enforced
@@ -39,7 +61,6 @@
   - Swizzle (SMem bank-conflict avoidance) and its transvection machinery
   - Folding / simplification engine (like f2's); expressions are kept as-is
   - Reshape mapping (merge / break) as explicit transformation passes
-  - GMEM check diagnostic (lane-placement legality verdict, see GMem section)
   - No padding / truncation / injective-surjective support, by design
 
 - Overview
@@ -280,33 +301,34 @@
 
 ## GMem Coalesce (coordiante |-> coordinate)
 
-- Status: no optimizer implemented, and per the analysis below none is needed —
-  what remains is a legality **check** (planned, not implemented)
+- Status: implemented (`GMem`), see "Working" above for the contract summary
 
-- Why there is nothing to optimize
+- Why the optimizer is a swap pass (and not a permutation search)
   - 1) During access mapping, we put corresponding variable in the corresponding dimension
   - 2) Global memory access cannot permutate dimension
     - Global coords to 1D offset mapping is fixed
     - Permutate other dimension in will be worse
   - 3) The only thing we can do is to allow more variable in the last dimension
-    - Which we have already done during normal access mapping
-  - 4) Corollary: given a fixed tile shape (user input, global strides are fixed by
-     the problem) and a fixed opinioned access map, the GMEM access pattern is fully
-     determined by the **BoV ordering** — the only remaining degree of freedom
-    - BoV order is major -> minor significance (see "Implemented conventions"):
-      put the lane variable last and it lands on the minor, unit-stride digits
-    - A mis-ordered BoV still yields a valid bijection, just an uncoalesced one,
-      so the framework must diagnose it, not silently accept it
+  - 4) Since the user may supply the BoV in any order, the framework itself must
+     fix a mis-ordered BoV: it swaps relevant-family freedom INTO the last
+     dimension (up to the coalescing window W) and displaces an equal amount of
+     non-relevant freedom into the dimensions the relevant variables came from
 
-- Planned check (no transformation, verdict only)
-  - Walk the composed offset expression's mixed-radix digits; verify the lane
-    variable's digits occupy the trailing tail with unit element strides (after
-    dtype scaling) and cover PI(trailing extents) >= lane bound
-  - Returns {Optimal, LaneMisplaced}; the user fixes it by reordering the BoV (or,
-    upstream, by choosing a tile shape whose trailing extents factor against the
-    lane bound)
+- The pass (`gmem_map.go`)
+  - Window W = min(last dim extent, lineBytes/dtypeSize, total freedom V of the
+    relevant family across the layout); requires lineBytes % dtypeSize == 0
+  - Fast path: last dim's relevant occupancy R' >= W => no-op
+  - Otherwise: partite the last dim into non-relevant (E) and relevant (R')
+    pieces, pool the non-relevant side as one Stride, and draw exactly W/R'
+    freedom from relevant coords in the other dimensions via GCD splits
+    (portion = gcd(candidate bound, remaining)), replacing each drawn candidate
+    in place with (its remainder ++ an equal slice of the pool)
+  - The pool remainder (E/(W/R')) stays in the last dim; the new last dim
+    variable is re-run through the access map against the last dim's shape
+  - Invariants preserved: every dim keeps its extent, every variable is consumed
+    exactly once, so the composed mapping stays a bijection (property-tested)
 
 - Notes: for f2, it is almost the same
   - We just fix cases that the degree of freedom is not enough, we swap in more binary/bit variable
-  - In subgroupchain the analogous freedom is the user's BoV order + tile choice,
-    both upstream of this algebra
+  - In subgroupchain the analogous freedom is expressed by family-based swapping
+    rather than bit permutation

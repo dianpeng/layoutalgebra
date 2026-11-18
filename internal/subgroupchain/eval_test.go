@@ -52,6 +52,9 @@ func evalExpr(t *testing.T, e Expr, env map[string]int) int {
 			total += evalExpr(t, c, env) * stride[i]
 		}
 		return total
+	case *Coordinate:
+		// a factorization digit: its value IS the underlying expression's value
+		return evalExpr(t, n.Value(), env)
 	default:
 		t.Fatalf("unknown expression node kind %d", e.Kind())
 		return 0

@@ -136,7 +136,7 @@ func (self *accessorMap) doAccessMap(
 
 func (self *accessorMap) Run(
 	env Env,
-	bov []*Variable,
+	bov []Coord,
 	tileSize ConstHTuple,
 ) (HTuple, error) {
 	// the mapping is a bijection only if the BoV product equals the tile rank;
@@ -146,8 +146,8 @@ func (self *accessorMap) Run(
 	for _, v := range bov {
 		if v.UpperBound() < 2 {
 			return HTuple{}, fmt.Errorf(
-				"variable %q has trivial upper bound %d and can never be consumed",
-				v.Name(), v.UpperBound())
+				"BoV entry (id %d) has trivial upper bound %d and can never be consumed",
+				v.(Expr).Id(), v.UpperBound())
 		}
 		total *= v.UpperBound()
 	}
@@ -159,7 +159,7 @@ func (self *accessorMap) Run(
 
 	bovExpr := make([]Expr, 0, len(bov))
 	for _, v := range bov {
-		bovExpr = append(bovExpr, v)
+		bovExpr = append(bovExpr, v.(Expr))
 	}
 	return self.doAccessMap(env, bovExpr, tileSize)
 }
@@ -167,6 +167,11 @@ func (self *accessorMap) Run(
 // Access maps the bag of variables (BoV) into the coordinate HTuple of the given
 // tile size, left to right.
 func Access(env Env, bov []*Variable, tileSize ConstHTuple) (HTuple, error) {
+	accessor := accessorMap{}
+	return accessor.Run(env, common.Map(bov, func(x *Variable) Coord { return x }), tileSize)
+}
+
+func AccessWithCoord(env Env, bov []Coord, tileSize ConstHTuple) (HTuple, error) {
 	accessor := accessorMap{}
 	return accessor.Run(env, bov, tileSize)
 }

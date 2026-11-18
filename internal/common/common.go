@@ -80,3 +80,27 @@ func SliceEqual[T comparable](lhs, rhs []T) bool {
 	}
 	return true
 }
+
+// Slice returns s[start:end] with Python-style negative indexing: a negative
+// index counts from the end (s[-1] is the last element).
+func Slice[T any](s []T, start, end int) []T {
+	if start < 0 {
+		start = len(s) + start
+	}
+	if end < 0 {
+		end = len(s) + end
+	}
+	return s[start:end]
+}
+
+// Min3 returns the minimum of three ordered values.
+func Min3[T ~int | ~int64 | ~float64](a, b, c T) T {
+	out := a
+	if b < out {
+		out = b
+	}
+	if c < out {
+		out = c
+	}
+	return out
+}

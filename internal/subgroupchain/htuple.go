@@ -331,7 +331,8 @@ func (self *HTuple) Rank(env Env) Expr {
 	return env.Factory.Product(exprs...)
 }
 
-func (self *HTuple) Size() int { return len(self.vec) }
+func (self *HTuple) Size() int          { return len(self.vec) }
+func (self *HTuple) Last() *HTupleValue { return self.vec[len(self.vec)-1] }
 
 // For example: (a (b c) d) => (a b*c d)
 func (self HTuple) Flatten(env Env) HTuple {
@@ -396,7 +397,8 @@ func (self *ConstHTuple) Rank() int {
 	return v
 }
 
-func (self *ConstHTuple) Size() int { return len(self.vec) }
+func (self *ConstHTuple) Size() int               { return len(self.vec) }
+func (self *ConstHTuple) Last() *ConstHTupleValue { return self.vec[len(self.vec)-1] }
 
 // For example: (a (b c) d) => (a b*c d)
 func (self ConstHTuple) Flatten() ConstHTuple {

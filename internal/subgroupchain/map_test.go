@@ -36,8 +36,9 @@ func TestAccessReadmeExample(t *testing.T) {
 		if !coord.Index(i).IsLeaf() {
 			t.Fatalf("coordinate dim %d is not a leaf stride", i)
 		}
-		if coord.Index(i).Leaf().Kind() != KindStride {
-			t.Fatalf("coordinate dim %d kind = %d, want KindStride", i, coord.Index(i).Leaf().Kind())
+		k := coord.Index(i).Leaf().Kind()
+		if k != KindStride && k != KindCoordinate {
+			t.Fatalf("coordinate dim %d kind = %d, want a coord kind", i, k)
 		}
 	}
 

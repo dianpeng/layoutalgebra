@@ -74,7 +74,24 @@ type StrideOffset struct {
 	UpperBound           Value
 }
 
-func (self *Factory) Stride(listOfStride []StrideOffset) *Stride {
+// NOTES(dpeng): please do not optimize case when listOfStride just contain one element
+// Stride is important for various position, since many pass will rely on Stride node
+// specifically
+func (self *Factory) Stride(listOfStride []StrideOffset) Expr {
+	allCoord := true
+	for _, v := range listOfStride {
+		if !self.checkCoord(v.CoordinateExpression) {
+			allCoord = false
+			break
+		}
+	}
+	check.Check(allCoord, "Stride operands must be Coord nodes")
+
+	if len(listOfStride) == 1 {
+		// identity case, just return the coordinate expression back
+		return listOfStride[0].CoordinateExpression
+	}
+
 	// figure out shape/stride/coord
 	shape := make([]int, 0, len(listOfStride))
 	coord := make([]Expr, 0, len(listOfStride))
@@ -94,6 +111,14 @@ func (self *Factory) Stride(listOfStride []StrideOffset) *Stride {
 	return out
 }
 
+func (self *Factory) StrideCoord(listOfCoords []Coord) Expr {
+	return self.Stride(
+		common.Map(listOfCoords, func(x Coord) StrideOffset {
+			return StrideOffset{CoordinateExpression: x.(Expr), UpperBound: x.UpperBound()}
+		}),
+	)
+}
+
 // ie PI(x0, x1, ..., xs) => x0 * x1 * ... * xs
 func (self *Factory) Product(a ...Expr) Expr {
 	if len(a) == 0 {
@@ -106,12 +131,28 @@ func (self *Factory) Product(a ...Expr) Expr {
 	return lhs
 }
 
+func (self *Factory) coordinate(v Expr, bound int) Expr {
+	out := &Coordinate{
+		value:      v,
+		upperBound: Value(bound),
+	}
+	self.setupNode(out)
+	return out
+}
+
+func (self *Factory) checkCoord(v Expr) bool {
+	_, isCoord := v.(Coord)
+	return isCoord
+}
+
 // Factorize performs a mixed-radix decomposition of `variable` (whose range must be
 // the interval [0, PI(bounds))) into one expression per entry of `bounds`. Entry i of
 // the result extracts digit i: (variable / stride[i]) % bounds[i] where
 // stride[i] = PI(bounds[i+1:]). Entries of `bounds` equal to 1 yield a nil result
 // entry, since that digit is trivial.
 func (self *Factory) Factorize(variable Expr, bounds []int) ([]Expr, error) {
+	check.Check(self.checkCoord(variable), "Factorize input must be a Coord node")
+
 	rng := variable.Range()
 	if rng == nil || rng.IsUnknown() {
 		return nil, fmt.Errorf("input variable has no range attached, cannot work")
@@ -129,9 +170,11 @@ func (self *Factory) Factorize(variable Expr, bounds []int) ([]Expr, error) {
 			return nil, fmt.Errorf("bounds[%d] = %d, must be >= 1", idx, b)
 		}
 	}
-
 	if rngIt.UpperBound() <= 1 {
-		return nil, fmt.Errorf("pointless factorization, range's upper bound is %d", rngIt.UpperBound())
+		return nil, fmt.Errorf(
+			"pointless factorization, range's upper bound is %d",
+			rngIt.UpperBound(),
+		)
 	}
 	if rngIt.UpperBound() != common.Product(bounds...) {
 		return nil, fmt.Errorf("mismatched value, cannot factorize")
@@ -155,6 +198,26 @@ func (self *Factory) Factorize(variable Expr, bounds []int) ([]Expr, error) {
 		prod *= bounds[idx] // notes bounds[idx] == 1 is fine for this
 	}
 
+	// identity fast path: exactly one non-trivial digit, at the bottom of the
+	// radix (stride 1, nothing above it), extracts the whole range — return
+	// the input node itself instead of wrapping it in a pointless
+	// (v % upperBound) / 1 expression
+	nonTrivial := -1
+	for idx, b := range bounds {
+		if b != 1 {
+			if nonTrivial >= 0 {
+				nonTrivial = -2 // more than one non-trivial digit
+				break
+			}
+			nonTrivial = idx
+		}
+	}
+	if nonTrivial >= 0 && stride[nonTrivial] == 1 {
+		out := make([]Expr, len(bounds))
+		out[nonTrivial] = variable
+		return out, nil
+	}
+
 	// the stride contains all strided value, with entry to be 0 indicates the variable
 	// is trivial, ie do not generate it directly
 	out := make([]Expr, len(bounds))
@@ -173,12 +236,23 @@ func (self *Factory) Factorize(variable Expr, bounds []int) ([]Expr, error) {
 			cur = self.Binary(Mod, cur, self.Const(radix[idx]))
 		}
 		cur = self.Binary(Div, cur, self.Const(stride[idx]))
-		out[idx] = cur
+		cur = self.coordinate(cur, bounds[idx])
 
 		// attach the range so consumers (eg the access map's next dimension) can
 		// query the digit's bound without re-running analysis over the whole tree
 		AnalyzeRange(cur)
+
+		out[idx] = cur
 	}
 
 	return out, nil
+}
+
+// same as Factorize, but only working for split one into 2. Assert on s0 * s1 == in.UpperBounds
+func (self *Factory) Split(in Expr, s0, s1 int) (Expr, Expr, error) {
+	if o, err := self.Factorize(in, []int{s0, s1}); err != nil {
+		return nil, nil, err
+	} else {
+		return o[0], o[1], nil
+	}
 }

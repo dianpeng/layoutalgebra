@@ -23,22 +23,33 @@ func TestFactoryNodeBasics(t *testing.T) {
 		t.Errorf("binary wrong: kind=%d op=%d", b.Kind(), b.Op())
 	}
 
+	v2 := f.Variable("warp", "warp1", 3)
 	s := f.Stride([]StrideOffset{
 		{CoordinateExpression: v, UpperBound: 14},
-		{CoordinateExpression: c, UpperBound: 3},
+		{CoordinateExpression: v2, UpperBound: 3},
 	})
+	strideNode, ok := s.(*Stride)
+	if !ok {
+		t.Fatalf("2-element Stride returned %T, want *Stride", s)
+	}
 	if s.Kind() != KindStride {
 		t.Errorf("stride kind = %d, want KindStride", s.Kind())
 	}
-	if s.Rank() != 42 {
-		t.Errorf("stride rank = %d, want 42", s.Rank())
+	if strideNode.Rank() != 42 {
+		t.Errorf("stride rank = %d, want 42", strideNode.Rank())
 	}
-	if len(s.Shape()) != 2 || s.Shape()[0] != 14 || s.Shape()[1] != 3 {
-		t.Errorf("stride shape = %v, want [14 3]", s.Shape())
+	if len(strideNode.Shape()) != 2 || strideNode.Shape()[0] != 14 || strideNode.Shape()[1] != 3 {
+		t.Errorf("stride shape = %v, want [14 3]", strideNode.Shape())
 	}
 	// row-major strides for shape [14, 3] are [3, 1]
-	if len(s.Stride()) != 2 || s.Stride()[0] != 3 || s.Stride()[1] != 1 {
-		t.Errorf("stride vector = %v, want [3 1]", s.Stride())
+	if len(strideNode.Stride()) != 2 || strideNode.Stride()[0] != 3 || strideNode.Stride()[1] != 1 {
+		t.Errorf("stride vector = %v, want [3 1]", strideNode.Stride())
+	}
+
+	// single-element Stride is the identity (returns the coordinate itself)
+	identity := f.Stride([]StrideOffset{{CoordinateExpression: v, UpperBound: 14}})
+	if !identity.IsEqual(v) {
+		t.Errorf("1-element Stride = %v, want the coordinate itself", identity)
 	}
 
 	// ids are unique and monotonically increasing
@@ -86,9 +97,21 @@ func TestIsEqual(t *testing.T) {
 		t.Error("different-op binaries reported equal")
 	}
 
-	s1 := f.Stride([]StrideOffset{{CoordinateExpression: v1, UpperBound: 14}})
-	s2 := f.Stride([]StrideOffset{{CoordinateExpression: v2, UpperBound: 14}})
-	s3 := f.Stride([]StrideOffset{{CoordinateExpression: v1, UpperBound: 7}})
+	// notes: 1-element Stride is the identity (returns the coordinate), so
+	// stride-equality tests use 2-element strides
+	v4 := f.Variable("warp", "warp9", 3)
+	s1 := f.Stride([]StrideOffset{
+		{CoordinateExpression: v1, UpperBound: 14},
+		{CoordinateExpression: v4, UpperBound: 3},
+	})
+	s2 := f.Stride([]StrideOffset{
+		{CoordinateExpression: v2, UpperBound: 14},
+		{CoordinateExpression: v4, UpperBound: 3},
+	})
+	s3 := f.Stride([]StrideOffset{
+		{CoordinateExpression: v1, UpperBound: 7},
+		{CoordinateExpression: v4, UpperBound: 6},
+	})
 	if !s1.IsEqual(s2) {
 		t.Error("equal strides reported unequal")
 	}
@@ -245,8 +268,12 @@ func TestVariableRejectsTrivialBound(t *testing.T) {
 func TestStrideEmptyShape(t *testing.T) {
 	f := &Factory{}
 	s := f.Stride(nil)
-	if s.Rank() != 1 {
-		t.Errorf("empty-shape stride rank = %d, want 1", s.Rank())
+	strideNode, ok := s.(*Stride)
+	if !ok {
+		t.Fatalf("empty Stride returned %T, want *Stride", s)
+	}
+	if strideNode.Rank() != 1 {
+		t.Errorf("empty-shape stride rank = %d, want 1", strideNode.Rank())
 	}
 	// range analysis must not blow up on it either
 	AnalyzeRange(s)

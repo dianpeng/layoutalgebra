@@ -25,6 +25,8 @@ func (self *orderPost) visit(current Expr) {
 		for _, c := range node.Coord() {
 			self.visit(c)
 		}
+	case *Coordinate:
+		self.visit(node.Value())
 	}
 	self.out = append(self.out, current)
 }
@@ -50,6 +52,8 @@ func (self *orderPre) visit(current Expr) {
 		for _, c := range node.Coord() {
 			self.visit(c)
 		}
+	case *Coordinate:
+		self.visit(node.Value())
 	}
 }
 
