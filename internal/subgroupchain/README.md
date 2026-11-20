@@ -325,17 +325,34 @@
 
 - The pass (`gmem_map.go`)
   - Window W = min(last dim extent, lineBytes/dtypeSize, total freedom V of the
-    relevant family across the layout); requires lineBytes % dtypeSize == 0
-  - Fast path: last dim's relevant occupancy R' >= W => no-op
-  - Otherwise: partite the last dim into non-relevant (E) and relevant (R')
-    pieces, pool the non-relevant side as one Stride, and draw exactly W/R'
-    freedom from relevant coords in the other dimensions via GCD splits
-    (portion = gcd(candidate bound, remaining)), replacing each drawn candidate
-    in place with (its remainder ++ an equal slice of the pool)
-  - The pool remainder (E/(W/R')) stays in the last dim; the new last dim
-    variable is re-run through the access map against the last dim's shape
-  - Invariants preserved: every dim keeps its extent, every variable is consumed
-    exactly once, so the composed mapping stays a bijection (property-tested)
+    relevant family across the whole layout, nesting included); requires
+    lineBytes % dtypeSize == 0
+  - Objective is **suffix coverage**: the relevant family must occupy the
+    low-weight tail of the last dim's FLATTENED piece sequence with product
+    >= W (coverage as a bare product anywhere is not sector-optimal)
+  - Fast path: suffix already covers W => no-op
+  - Reorder path: relevant freedom all present (R' >= W) but misplaced =>
+    stable-partition the pieces (non-relevant to high weights) and remap,
+    no draw needed
+  - Adjust path: divisor-search draw — achievable occupancies are R'*draw with
+    draw | E (non-relevant occupancy), so the pass tries each feasible
+    draw >= ceil(W/R') in ascending order until the donor GCD chain realizes
+    one; donors are walked recursively, nesting included
+  - The last dim may be nested: its coordinate is flattened (piece-aligned
+    digits decompose into piece runs, chained coordinates flatten
+    algebraically, misaligned digits stay atomic) and the window is defined
+    on the flattened tail; the remap redistributes into the nested shape
+  - New last dim assembly: leftover pool ++ arrivals ++ relevant pieces, so
+    the relevant pieces form the suffix
+  - Invariants preserved: every dim keeps its extent, every variable is
+    consumed exactly once, so the composed mapping stays a bijection
+    (property-tested: 1794 cases incl. nested shapes; bijection always,
+    suffix >= W and exact sector counts on success)
+  - Classified conservative errors (layout untouched): "not representable"
+    (no draw divisor fits the freedom — mathematical), "not extractable"
+    (GCD chain stall — two-stage draw would recover), "opaque mixed"
+    (misaligned mixed digit in a nested last dim — digit splitting would
+    recover)
 
 - Notes: for f2, it is almost the same
   - We just fix cases that the degree of freedom is not enough, we swap in more binary/bit variable

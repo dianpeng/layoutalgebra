@@ -236,20 +236,21 @@ func TestGMemErrorsLeaveLayoutUnchanged(t *testing.T) {
 		config GMemCoalesce
 	}{
 		{
-			// window 4 not divisible by lane occupancy 3 in the last dim
-			name:  "window-not-divisible",
-			lane:  6,
-			other: 2,
-			shape: []Value{2, 6},
+			// window 5 vs occupancy 4 (R'=4, E=3): the only draw divisor 3
+			// exceeds the external freedom 2 -> window not representable
+			name:  "window-not-representable",
+			lane:  8,
+			other: 3,
+			shape: []Value{2, 12},
 			config: GMemCoalesce{
-				ByteSize:       16, // line = 4 elements
+				ByteSize:       20, // line = 5 elements
 				VariableFamily: "lane",
 			},
 		},
 		{
 			// remaining lane freedom elsewhere (bound 3) shares no factor
-			// with the draw (2)
-			name:  "insufficient-freedom",
+			// with the draw (2) -> present but not extractable
+			name:  "not-extractable",
 			lane:  6,
 			other: 2,
 			shape: []Value{3, 4},
@@ -289,6 +290,36 @@ func TestGMemErrorsLeaveLayoutUnchanged(t *testing.T) {
 	}
 }
 
+// The divisor search must recover windows that are not an exact multiple of
+// the current occupancy: R'=3, W=4 -> draw=2 gives occupancy 6 >= 4.
+func TestGMemDivisorSearchCoverage(t *testing.T) {
+	env := *NewEnv()
+	f := env.Factory
+	lane := f.Variable("lane", "lane", 6)
+	warp := f.Variable("warp", "warp", 2)
+	tile := NewConstHTuple([]Value{2, 6})
+
+	coord, err := Access(env, []*Variable{lane, warp}, tile)
+	if err != nil {
+		t.Fatalf("Access failed: %v", err)
+	}
+	layout := &Layout{Coordinate: coord, Shape: tile}
+
+	if err := GMem(env, GMemCoalesce{ByteSize: 16, VariableFamily: "lane"}, 4, layout); err != nil {
+		t.Fatalf("GMem failed: %v", err)
+	}
+
+	assertBijective(t, env, layout, []*Variable{lane, warp}, 4)
+	// occupancy 6 >= window 4, and the lane suffix is contiguous:
+	// 6 elements * 4 bytes = 24B -> 1 sector per warp
+	if got := laneOccupancy(t, layout, "lane"); got != 6 {
+		t.Errorf("lane occupancy = %d, want 6 (divisor-search overshoot)", got)
+	}
+	if got := sectorCount(t, env, layout, []*Variable{lane, warp}, lane, 4); got != 1 {
+		t.Errorf("sectors = %d, want 1 (contiguous 24B window)", got)
+	}
+}
+
 func TestGMemConfigErrors(t *testing.T) {
 	env := *NewEnv()
 	f := env.Factory
@@ -315,84 +346,263 @@ func TestGMemConfigErrors(t *testing.T) {
 	}
 }
 
-func TestGMemNestedLastDimUnsupported(t *testing.T) {
+// A nested last dimension is optimized like a flat one: the window is
+// defined on the flattened tail, and the remap redistributes into the nested
+// shape with the relevant pieces at the tail.
+func TestGMemNestedLastDim(t *testing.T) {
 	env := *NewEnv()
 	f := env.Factory
-	lane := f.Variable("lane", "lane", 24)
+	lane := f.Variable("lane", "lane", 6)
+	warp := f.Variable("warp", "warp", 4)
 	tile := ConstHTuple{vec: []*ConstHTupleValue{
 		NewConstHTupleValueLeaf(4),
 		NewConstHTupleValueHTuple(NewConstHTuple([]Value{2, 3})),
 	}}
-	coord, err := Access(env, []*Variable{lane}, tile)
+
+	coord, err := Access(env, []*Variable{lane, warp}, tile)
 	if err != nil {
 		t.Fatalf("Access failed: %v", err)
 	}
 	layout := &Layout{Coordinate: coord, Shape: tile}
-	if err := GMem(env, GMemCoalesce{ByteSize: 128, VariableFamily: "lane"}, 4, layout); err == nil {
-		t.Error("nested last dimension: expected error")
+
+	// last dim (2,3) is mixed: lane3 ++ warp2, suffix 1, R'=3, W=6
+	if err := GMem(env, GMemCoalesce{ByteSize: 128, VariableFamily: "lane"}, 4, layout); err != nil {
+		t.Fatalf("GMem failed: %v", err)
 	}
+
+	assertBijective(t, env, layout, []*Variable{lane, warp}, 4)
+	// suffix lane occupancy 6 = whole last dim -> contiguous 24B -> 1 sector
+	if got := sectorCount(t, env, layout, []*Variable{lane, warp}, lane, 4); got != 1 {
+		t.Errorf("sectors = %d, want 1 (contiguous 24B window)", got)
+	}
+
+	// idempotent: a second run finds the suffix covered
+	before := elementOffsets(t, env, layout, []*Variable{lane, warp}, 4)
+	if err := GMem(env, GMemCoalesce{ByteSize: 128, VariableFamily: "lane"}, 4, layout); err != nil {
+		t.Fatalf("second GMem failed: %v", err)
+	}
+	after := elementOffsets(t, env, layout, []*Variable{lane, warp}, 4)
+	if len(before) != len(after) {
+		t.Fatalf("second GMem changed the mapping")
+	}
+}
+
+// A nested donor dimension contributes candidates: the lane freedom living
+// inside a nested dim is drawable.
+func TestGMemNestedDonor(t *testing.T) {
+	env := *NewEnv()
+	f := env.Factory
+	lane := f.Variable("lane", "lane", 6)
+	warp := f.Variable("warp", "warp", 4)
+	tile := ConstHTuple{vec: []*ConstHTupleValue{
+		NewConstHTupleValueHTuple(NewConstHTuple([]Value{2, 2})),
+		NewConstHTupleValueLeaf(6),
+	}}
+
+	coord, err := Access(env, []*Variable{lane, warp}, tile)
+	if err != nil {
+		t.Fatalf("Access failed: %v", err)
+	}
+	layout := &Layout{Coordinate: coord, Shape: tile}
+
+	if err := GMem(env, GMemCoalesce{ByteSize: 128, VariableFamily: "lane"}, 4, layout); err != nil {
+		t.Fatalf("GMem failed: %v", err)
+	}
+
+	assertBijective(t, env, layout, []*Variable{lane, warp}, 4)
+	if got := sectorCount(t, env, layout, []*Variable{lane, warp}, lane, 4); got != 1 {
+		t.Errorf("sectors = %d, want 1", got)
+	}
+}
+
+// sweepStats sweeps the lane variable (others pinned 0) and reports the
+// element-offset set's extent and the distinct 32B sector count.
+func sweepStats(
+	t *testing.T,
+	env Env,
+	layout *Layout,
+	bov []*Variable,
+	lane *Variable,
+	dtypeSize int,
+) (lo, hi, count, sectors int) {
+	t.Helper()
+	offset, err := StrideMap(env, layout, dtypeSize)
+	if err != nil {
+		t.Fatalf("StrideMap failed: %v", err)
+	}
+	assignment := make(map[string]int, len(bov))
+	for _, v := range bov {
+		assignment[v.Name()] = 0
+	}
+	seenElem := make(map[int]bool)
+	seenSector := make(map[int]bool)
+	for l := 0; l < int(lane.UpperBound()); l++ {
+		assignment[lane.Name()] = l
+		e := evalExpr(t, offset, assignment) / dtypeSize
+		seenElem[e] = true
+		seenSector[e*dtypeSize/32] = true
+	}
+	first := true
+	for e := range seenElem {
+		if first || e < lo {
+			lo = e
+		}
+		if first || e > hi {
+			hi = e
+		}
+		first = false
+	}
+	return lo, hi, len(seenElem), len(seenSector)
 }
 
 // --------------------------------------------------------------------------------------
 // property test: GMem preserves the bijection for every feasible input
 // --------------------------------------------------------------------------------------
 
+// testSuffixProduct independently flattens the last dimension (nesting
+// included) and returns the product of the trailing pure-lane pieces.
+func testSuffixProduct(t *testing.T, layout *Layout, family string) int {
+	t.Helper()
+	var pieces []Coord
+
+	var expand func(e Expr)
+	expand = func(e Expr) {
+		if s, ok := e.(*Stride); ok {
+			for _, c := range s.Coord() {
+				expand(c)
+			}
+			return
+		}
+		if IsCoord(e) {
+			if _, err := AnalyzeCoord(e); err != nil {
+				return
+			}
+			pieces = append(pieces, e.(Coord))
+		}
+	}
+	var walk func(v *HTupleValue)
+	walk = func(v *HTupleValue) {
+		switch {
+		case v.IsLeaf():
+			expand(v.Leaf())
+		case v.IsHTuple():
+			h := v.HTuple()
+			for i := 0; i < h.Size(); i++ {
+				walk(h.Index(i))
+			}
+		case v.IsTuple():
+			for _, e := range v.Tuple().vec {
+				expand(e)
+			}
+		}
+	}
+	walk(layout.Coordinate.Index(layout.Coordinate.Size() - 1))
+
+	suffix := 1
+	for i := len(pieces) - 1; i >= 0; i-- {
+		if !pieces[i].CoordInfo().IsOnlyOccupiedByFamily(family) {
+			break
+		}
+		suffix *= int(pieces[i].UpperBound())
+	}
+	return suffix
+}
+
 func TestGMemSoundnessExhaustive(t *testing.T) {
 	const maxN = 48
 	const lineElems = 32 // 128B line, dtype 4
+
+	// nestedVariant wraps the first two extents into one sub-dim:
+	// (d0, d1, d2, ...) -> ((d0, d1), d2, ...)
+	nestedVariant := func(shape []int) (ConstHTuple, bool) {
+		if len(shape) < 2 {
+			return ConstHTuple{}, false
+		}
+		vec := []*ConstHTupleValue{
+			NewConstHTupleValueHTuple(NewConstHTuple([]Value{Value(shape[0]), Value(shape[1])})),
+		}
+		for _, d := range shape[2:] {
+			vec = append(vec, NewConstHTupleValueLeaf(Value(d)))
+		}
+		return ConstHTuple{vec: vec}, true
+	}
 
 	cases, optimized := 0, 0
 	for n := 2; n <= maxN; n++ {
 		for _, bov := range unorderedFactorizations(n, 2) {
 			for _, tileShape := range orderedFactorizations(n) {
-				cases++
-				env := *NewEnv()
-				f := env.Factory
+				shapes := []ConstHTuple{NewConstHTuple(intsToValues(tileShape))}
+				if nested, ok := nestedVariant(tileShape); ok {
+					shapes = append(shapes, nested)
+				}
 
-				vars := make([]*Variable, 0, len(bov))
-				for i, bound := range bov {
-					// first var is warp family, the rest lane; a single
-					// variable is the lane itself
-					family := "warp"
-					if i > 0 || len(bov) == 1 {
-						family = "lane"
+				for _, tile := range shapes {
+					cases++
+					env := *NewEnv()
+					f := env.Factory
+
+					vars := make([]*Variable, 0, len(bov))
+					for i, bound := range bov {
+						// first var is warp family, the rest lane; a single
+						// variable is the lane itself
+						family := "warp"
+						if i > 0 || len(bov) == 1 {
+							family = "lane"
+						}
+						vars = append(vars, f.Variable(family, varName(i), bound))
 					}
-					vars = append(vars, f.Variable(family, varName(i), bound))
-				}
-				tile := NewConstHTuple(intsToValues(tileShape))
 
-				coord, err := Access(env, vars, tile)
-				if err != nil {
-					t.Fatalf("N=%d bov=%v tile=%v: Access rejected: %v", n, bov, tileShape, err)
-				}
-				layout := &Layout{Coordinate: coord, Shape: tile}
-
-				err = GMem(env, GMemCoalesce{ByteSize: 128, VariableFamily: "lane"}, 4, layout)
-
-				// independent window computation: W = min(last, line, V)
-				v := 1
-				for _, varNode := range vars {
-					if varNode.Family() == "lane" {
-						v *= int(varNode.UpperBound())
+					coord, err := Access(env, vars, tile)
+					if err != nil {
+						t.Fatalf("N=%d bov=%v tile=%v: Access rejected: %v", n, bov, tileShape, err)
 					}
-				}
-				window := common.Min3(tileShape[len(tileShape)-1], lineElems, v)
+					layout := &Layout{Coordinate: coord, Shape: tile}
 
-				if err != nil {
-					// conservative bailout is allowed, but must leave the
-					// bijection intact
+					err = GMem(env, GMemCoalesce{ByteSize: 128, VariableFamily: "lane"}, 4, layout)
+
+					// independent window computation: W = min(last, line, V)
+					v := 1
+					for _, varNode := range vars {
+						if varNode.Family() == "lane" {
+							v *= int(varNode.UpperBound())
+						}
+					}
+					window := common.Min3(tileShape[len(tileShape)-1], lineElems, v)
+
+					if err != nil {
+						// conservative bailout is allowed, but must leave the
+						// bijection intact
+						assertBijective(t, env, layout, vars, 4)
+						continue
+					}
+					optimized++
 					assertBijective(t, env, layout, vars, 4)
-					continue
-				}
-				optimized++
-				assertBijective(t, env, layout, vars, 4)
 
-				// on success the last dim's lane occupancy must cover the
-				// window (exactly W after an adjust; >= W on the fast path,
-				// eg an indivisible 33-element dim vs a 32-element line)
-				if occupancy := laneOccupancy(t, layout, "lane"); occupancy < window {
-					t.Fatalf("N=%d bov=%v tile=%v: lane occupancy %d < window %d",
-						n, bov, tileShape, occupancy, window)
+					// on success the last dim's lane SUFFIX must cover the
+					// window; and when the whole sweep set is contiguous, the
+					// sector count must equal the exact byte-range count
+					// (no intra-line striding)
+					suffix := testSuffixProduct(t, layout, "lane")
+					if suffix < window {
+						t.Fatalf("N=%d bov=%v tile=%v: lane suffix %d < window %d",
+							n, bov, tileShape, suffix, window)
+					}
+					var lane *Variable
+					for _, varNode := range vars {
+						if varNode.Family() == "lane" {
+							lane = varNode
+							break
+						}
+					}
+					lo, hi, count, sectors := sweepStats(t, env, layout, vars, lane, 4)
+					if count == hi-lo+1 { // contiguous sweep
+						want := ((hi+1)*4+31)/32 - (lo*4)/32
+						if sectors != want {
+							t.Fatalf("N=%d bov=%v tile=%v: contiguous sweep [%d,%d] "+
+								"sectors %d != exact %d",
+								n, bov, tileShape, lo, hi, sectors, want)
+						}
+					}
 				}
 			}
 		}
