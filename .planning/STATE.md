@@ -89,6 +89,7 @@ Recent decisions affecting current work:
 | 261117-lay | Rename module to layoutalgebra + universal Algebra interface scaffolding (Problem/Mapping/Offset, registry; adapters deferred per algebra) | 2026-11-17 | 033eff2 | Verified | [20261117-rename-layoutalgebra](./quick/20261117-rename-layoutalgebra/) |
 | 261118-gmem | GMEM optimization pass (user-written) reviewed, fixed, tested — Coordinate IR + coord analysis + family swap; exhaustive bijection property test | 2026-11-18 | d92f660 | Verified | [20261118-gmem-review](./quick/20261118-gmem-review/) |
 | 261118-crd | Coordinate redesigned as radix extraction operator; Variable leaves the Coord chain; constructor canonicalization + chain monotonicity invariant; behavior-preserving (identical property results) | 2026-11-18 | 68092f4 | Verified | [20261118-gmem-review](./quick/20261118-gmem-review/) |
+| 261120-gmc | GMEM coverage fixes — suffix objective + reorder path, divisor-search draw w/ classified errors, nested donors + nested last dim; property suite 1794 cases, 1423 optimized / 371 classified bailouts | 2026-11-20 | 8b5051d | Awaiting user review | [20261120-gmem-coverage](./quick/20261120-gmem-coverage/) |
 
 ## Session Continuity
 
