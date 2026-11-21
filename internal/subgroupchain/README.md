@@ -5,6 +5,14 @@
 ## Status (2026-11-17)
 
 - Working
+  - **Memory-hierarchy optimization framework** (universal components, each
+    independently testable): production reference interpreter (`Eval`), warp
+    sweep measurement (`SweepLane` — sectors AND bank distinctness), last-dim
+    analysis (`AnalyzeLastDim`, `FamilyFreedom`), the coverage repair engine
+    (`ReorderLastDim`, `DrawIntoLastDim` with the gcd feasibility theorem and
+    pre-commit suffix verification), and the `Pass`/`Context`/`Optimize` driver
+    (window -> analysis -> fast path -> transform stage -> coverage repair ->
+    post-check)
   - Expression IR: Variable / Const / Symbol / Binary(Add/Sub/Mul/Div/Mod) /
     Coordinate / Stride
     - Notes, `Div` is truncating integer division; `Stride` is an opaque dot-product
@@ -35,17 +43,24 @@
   - Tuple / ConstTuple / HTuple / ConstHTuple machinery (flatten, clone, rank, ...)
   - Access mapping (BoV |-> coordinate HTuple), incl. recursive (nested) tile shapes
   - Stride mapping (coordinate HTuple |-> byte offset), dtype-size scaling
-  - GMEM optimization (`GMem`): swap-in/swap-out pass raising the relevant family's
-    occupancy of the last dimension to the coalescing window
+  - GMEM optimization (`GMem`): a framework instantiation — objective is
+    suffix coverage of the last dim's flattened tail
     - window W = min(lastDimExtent, lineBytes/dtypeSize, total family freedom V)
-    - fast path (no-op) when occupancy already covers W; otherwise draws exactly
-      W/R freedom from relevant variables in other dimensions, displacing an equal
-      amount of non-relevant freedom back (pool split + on-the-fly replacement)
-    - errors (not panics) on infeasible configs: line size not a multiple of dtype
-      size, window not divisible by current occupancy, insufficient drawable
-      freedom, nested last dimension; a failed run leaves the layout untouched
-    - property-verified: bijection preserved for all feasible (BoV, tile) pairs
-      with N <= 48, occupancy >= W on success (964 cases)
+    - fast path (suffix covers W) -> reorder path (misplaced but sufficient) ->
+      divisor-search draw; repairs are verified BEFORE commit (nested cut
+      structures that split the family block bail cleanly, layout untouched)
+    - property-verified: 1794 cases (flat + nested shapes, N <= 48): bijection
+      always, suffix >= W + exact sector counts on success, classified
+      conservative errors otherwise
+  - SMEM bank-conflict pass (`Smem`): a framework instantiation — objective
+    is warp-sweep bank distinctness (weaker than GMEM contiguity)
+    - fast path = sweep distinctness; optional swizzle hook (`TrySwizzle`) is
+      the stage-4 transform slot (the transvection is NOT implemented yet);
+      universal coverage draw as fallback
+    - requires a unique family variable (the warp lane) — multi-variable
+      families are rejected loudly rather than silently mis-measured
+    - property-verified: 1021 single-lane cases: bijection always, every
+      success machine-checked conflict-free
 
 - Verified
   - Soundness: Access + StrideMap compose to a **bijection** onto [0, N); enforced

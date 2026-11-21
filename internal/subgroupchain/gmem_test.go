@@ -466,16 +466,11 @@ func sweepStats(
 // for coverage is the exact-sector assertion on contiguous sweeps.
 func testSuffixProduct(t *testing.T, layout *Layout, family string) int {
 	t.Helper()
-	g := gmemMap{}
-	pieces := []Coord{}
-	if err := g.lastDimPieces(layout.Coordinate.Index(layout.Coordinate.Size()-1), &pieces); err != nil {
-		return -1
-	}
-	_, _, suffix, err := g.classifyPieces(pieces, family)
+	an, err := AnalyzeLastDim(layout, family)
 	if err != nil {
 		return -1
 	}
-	return suffix
+	return an.Suffix
 }
 
 func TestGMemSoundnessExhaustive(t *testing.T) {

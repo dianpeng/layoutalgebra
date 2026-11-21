@@ -2,64 +2,15 @@ package subgroupchain
 
 import "testing"
 
-// evalExpr is a test-only interpreter for the subgroupchain expression IR. It
-// evaluates an expression tree against a concrete assignment of variable names.
+// evalExpr is a test helper delegating to the production Eval, failing the
+// test on error.
 func evalExpr(t *testing.T, e Expr, env map[string]int) int {
 	t.Helper()
-	switch n := e.(type) {
-	case *Const:
-		return n.Value()
-	case *Variable:
-		v, ok := env[n.Name()]
-		if !ok {
-			t.Fatalf("variable %q has no assignment", n.Name())
-		}
-		return v
-	case *Symbol:
-		v, ok := env[n.Name()]
-		if !ok {
-			t.Fatalf("symbol %q has no assignment", n.Name())
-		}
-		return v
-	case *Binary:
-		l := evalExpr(t, n.L(), env)
-		r := evalExpr(t, n.R(), env)
-		switch n.Op() {
-		case Add:
-			return l + r
-		case Sub:
-			return l - r
-		case Mul:
-			return l * r
-		case Div:
-			if r == 0 {
-				t.Fatalf("invalid div %d / 0", l)
-			}
-			return l / r
-		case Mod:
-			if r == 0 {
-				t.Fatalf("invalid mod %d %% 0", l)
-			}
-			return l % r
-		default:
-			t.Fatalf("unknown binary op %d", n.Op())
-			return 0
-		}
-	case *Stride:
-		total := 0
-		stride := n.Stride()
-		for i, c := range n.Coord() {
-			total += evalExpr(t, c, env) * stride[i]
-		}
-		return total
-	case *Coordinate:
-		// radix based digit extraction: (source % radix) / stride
-		src := evalExpr(t, n.Source(), env)
-		return (src % int(n.Radix())) / int(n.Stride())
-	default:
-		t.Fatalf("unknown expression node kind %d", e.Kind())
-		return 0
+	v, err := Eval(e, env)
+	if err != nil {
+		t.Fatalf("Eval failed: %v", err)
 	}
+	return v
 }
 
 // mustAccess runs Access and fails the test on error.
