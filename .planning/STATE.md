@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-11-12)
 Phase: 01
 Plan: Not started
 Status: Milestone complete
-Last activity: 2026-11-21 - Completed quick task 261121-om7: universal integration interfaces (pkg/ast + pkg/layout abstract factory)
+Last activity: 2026-11-21 - Completed quick task 261121-rqf: README integration-layer refresh + runnable example/
 
 Progress: [██████████] 100%
 
@@ -91,6 +91,7 @@ Recent decisions affecting current work:
 | 261118-crd | Coordinate redesigned as radix extraction operator; Variable leaves the Coord chain; constructor canonicalization + chain monotonicity invariant; behavior-preserving (identical property results) | 2026-11-18 | 68092f4 | Verified | [20261118-gmem-review](./quick/20261118-gmem-review/) |
 | 261120-gmc | GMEM coverage fixes — suffix objective + reorder path, divisor-search draw w/ classified errors, nested donors + nested last dim; property suite 1794 cases, 1423 optimized / 371 classified bailouts | 2026-11-20 | 8b5051d | Awaiting user review | [20261120-gmem-coverage](./quick/20261120-gmem-coverage/) |
 | 261121-om7 | Universal integration layer — pkg/ast interchange AST + pkg/layout abstract factory (f2/subgroupchain backends, root-Algebra adapters, lowering); AST==native equivalence machine-checked on full assignment spaces, all 3 stages both algebras | 2026-11-21 | c1ac05f | Complete | [261121-om7-create-universal-integration-interfaces-](./quick/261121-om7-create-universal-integration-interfaces-/) |
+| 261121-rqf | README integration-layer usage docs + example/main.go end-to-end tour of both algebras (Access/Gmem/Smem, AST printing, Eval demos, conservative-error demo); deterministic verified output | 2026-11-21 | e5ed1b5 | Complete | [261121-rqf-update-readme-with-integration-layer-inf](./quick/261121-rqf-update-readme-with-integration-layer-inf/) |
 | 261121-fw | Universal optimization framework (Pass/Context/Optimize + Eval/Sweep/LastDim/Repair components); GMem + Smem instantiations; TrySwizzle hook = user's stage-4 slot; 2 latent bugs fixed (nested cut-split false successes, multi-var family silent fallback) | 2026-11-21 | a863c30 | Awaiting user review | [20261121-pass-framework](./quick/20261121-pass-framework/) |
 
 ## Session Continuity
