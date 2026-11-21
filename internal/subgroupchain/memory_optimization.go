@@ -21,7 +21,7 @@ import (
 //   5. Coverage repair engine     — reorder + divisor-search draw
 //
 // The per-hierarchy instantiations (GMem, Smem) live in gmem_map.go and
-// smem.go; they only pick an objective, a byte window and (optionally) a
+// smem_swizzle_map.go; they only pick an objective, a byte window and (optionally) a
 // transform stage.
 //
 // --------------------------------------------------------------------------------------
