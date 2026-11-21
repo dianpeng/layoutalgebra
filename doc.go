@@ -15,12 +15,15 @@
 //     hierarchical tuples). Each is self-contained and exposes its own native
 //     API beside the universal one.
 //
-//  3. Per-algebra AST/code generation (not implemented yet). Once all algebras
-//     are complete, each grows a code-generation backend that interprets its
-//     native mapping artifacts into emitted index arithmetic. That layer plugs
-//     in behind the opaque [Mapping] / [Offset] handles returned here, making
-//     this package the single integration point: one consumer, many algebras,
-//     many backends.
+//  3. The universal integration layer (pkg/ast + pkg/layout). pkg/layout is
+//     the abstract factory: the consumer picks an algebra by kind, drives the
+//     pipeline stages, and receives algebra-agnostic ast.Expr artifacts —
+//     importing it also registers every shipped algebra in this package's
+//     registry. pkg/ast is the sealed interchange tree a compiler backend
+//     translates into its own IR (never interpreting algebra-native types).
+//     The per-algebra backends that emit index arithmetic from that AST are
+//     the remaining piece of the "one consumer, many algebras, many
+//     backends" endgame.
 //
 // Contract rules for implementations
 //

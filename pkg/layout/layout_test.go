@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/dianpeng/layoutalgebra"
+	"github.com/dianpeng/layoutalgebra/pkg/ast"
 )
 
 // Shared fixtures and enumeration helpers for the per-algebra test files.
@@ -155,5 +156,47 @@ func TestSessionMetadata(t *testing.T) {
 	}
 	if p := sess.Problem(); p == nil || len(p.Tile.Shape) != 2 {
 		t.Errorf("Problem() = %+v, want the 2D fixture", p)
+	}
+}
+
+// TestSubgroupChainSmoke is the usage-snippet contract end to end on the
+// sub-group chain algebra: one Engine, one Session, the three stage
+// methods, algebra-agnostic ast.Expr artifacts out.
+func TestSubgroupChainSmoke(t *testing.T) {
+	eng, err := New(SubgroupChain)
+	if err != nil {
+		t.Fatalf("New(SubgroupChain): %v", err)
+	}
+	sess, err := eng.NewSession(layoutalgebra.Problem{
+		Tile: layoutalgebra.Tile{Shape: []int{7, 16, 4}, DTypeSize: 4},
+		Concurrency: []layoutalgebra.Variable{
+			{Family: "warp", Name: "w", Bound: 14},
+			{Family: "lane", Name: "t", Bound: 32}, // lane last: sgc BoV order
+		},
+		Lane: "t",
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+
+	for name, stage := range map[string]func() (*Mapping, error){
+		"Access":       sess.Access,
+		"GmemOptimize": sess.GmemOptimize,
+		"SmemOptimize": sess.SmemOptimize,
+	} {
+		mp, err := stage()
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if mp.Algebra != SubgroupChain {
+			t.Errorf("%s: Algebra = %q, want %q", name, mp.Algebra, SubgroupChain)
+		}
+		if mp.Access == nil || mp.Offset == nil {
+			t.Errorf("%s: nil artifact in Mapping", name)
+		}
+		// reference evaluation works with plain variable assignments
+		if _, err := ast.Eval(mp.Offset, map[string]int{"w": 3, "t": 17}); err != nil {
+			t.Errorf("%s: reference Eval: %v", name, err)
+		}
 	}
 }
