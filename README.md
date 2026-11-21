@@ -17,9 +17,9 @@ Implemented today:
   `internal/subgroupchain/README.md`.
 
 ```
-hardware concurrency ──► [ algebra ] ──► mapping/offset ──► codegen (planned)
-(lane/warp variables,     (f2 /          (opaque per        (per-algebra
- tile shape, dtype)        subgroupchain)  algebra)          backend)
+hardware concurrency ──► [ algebra ] ──► universal AST ──► compiler backend
+(lane/warp variables,     (f2 /          (pkg/ast via        (consumes pkg/ast +
+ tile shape, dtype)        subgroupchain)  pkg/layout)         pkg/layout only)
 ```
 
 ## Architecture
@@ -34,16 +34,63 @@ The module is three layers:
 2. **The algebra implementations** (`internal/f2`, `internal/subgroupchain`)
    — each self-contained, with its own native API beside the universal one,
    its own guarantees, and its own test suite.
-3. **Per-algebra AST/code generation** (not implemented yet) — once all
-   algebras are complete, each grows a backend that interprets its native
-   mapping artifacts into emitted index arithmetic, plugging in behind the
-   opaque `Mapping`/`Offset` handles. The universal interface is the single
-   integration point for that layer.
+3. **The universal integration layer** (`pkg/ast`, `pkg/layout`) — the sealed
+   algebra-agnostic AST plus the abstract-factory facade and the root-registry
+   adapters. A compiler backend integrates against `pkg/ast` +
+   `pkg/layout` only (see *Universal integration* below); the per-algebra
+   backends that emit index arithmetic from the AST are the remaining piece.
 
 Conventions for implementations: conservative contract (do what you can,
 `error` when you cannot — false negatives are acceptable, wrong math and
 silent failures are not); implementations never mutate the `Problem`; results
 are opaque outside the producing algebra.
+
+## Universal integration (pkg/ast + pkg/layout)
+
+Layer 3 for *consumers*: `pkg/layout` is the abstract factory (pick an algebra
+by `Kind`, get stage artifacts as algebra-agnostic `ast.Expr` trees) and
+`pkg/ast` is the one sealed interchange AST a compiler translates into its own
+IR — no `internal/` types ever cross this boundary. Importing `pkg/layout`
+also registers both algebras in the root `layoutalgebra` registry.
+
+```go
+eng, _ := layout.New(layout.F2)            // or layout.SubgroupChain
+sess, _ := eng.NewSession(layoutalgebra.Problem{
+    Tile:        layoutalgebra.Tile{Shape: []int{7, 16, 4}, DTypeSize: 4},
+    Concurrency: []layoutalgebra.Variable{
+        {Family: "warp", Name: "w", Bound: 14},
+        {Family: "lane", Name: "t", Bound: 32}, // lane last: sgc BoV order
+    },
+    Lane: "t",
+})
+base, _ := sess.Access()        // base.Access (Tuple), base.Offset
+gmem, _ := sess.GmemOptimize()  // gmem.Offset -> translate into compiler IR
+smem, _ := sess.SmemOptimize()
+// testing / reference: ast.Eval(gmem.Offset, map[string]int{"w": 3, "t": 17})
+```
+
+Choosing F₂ vs sub-group chain is a one-token change (`layout.F2` ↔
+`layout.SubgroupChain`): identical stage methods, identical artifact types.
+
+| Option                | Default | Feeds                                                        |
+| --------------------- | ------- | ------------------------------------------------------------ |
+| `WithLineBytes(n)`    | 128     | F₂ `Segment{Sector:5, Line:log2(n)}`, sgc `GMemCoalesce.ByteSize` |
+| `WithBankBytes(n)`    | 128     | sgc `SmemCoalesce.BankBytes`                                  |
+| `WithBankWindow(s,r)` | (2, 5)  | F₂ `Bank{Skip, Range}`                                         |
+
+Stage artifacts (`layout.Mapping`): `Access` is the tile-coordinate mapping
+AST (F₂: one `Tuple` child per bit, MSB-first; sub-group chain: a hierarchy
+mirroring the tile shape) and `Offset` is the final byte-offset AST. For the
+F₂ SMEM stage, `Access` is the *pre-swizzle* coordinate mapping — the swizzle
+lives in byte space, so `Offset` alone carries it. Registry consumers can
+also drive the root `layoutalgebra.Algebra` adapters directly and lower
+afterwards with `layout.LowerAccess` / `layout.LowerOffset`.
+
+The lowered ASTs are machine-checked against the native pipelines: for every
+assignment of the concurrency variables on enumerated small problems,
+`ast.Eval(offset)` equals the native pipeline's byte offset, for both
+algebras and all three stages, and access/optimized offsets stay bijections
+onto the tile's byte multiples.
 
 ---
 
@@ -264,6 +311,15 @@ go build ./... && go vet ./... && go test ./... -count=1
 ```
 layoutalgebra (repo root)
   doc.go / algebra.go       the universal Algebra interface + registry (integration point)
+pkg/ast/                    the universal compiler-interchange AST (11 sealed nodes)
+  ast.go                  node set + constructors + Children/Walk
+  eval.go                 Eval — the reference integer evaluator
+  print.go                String() (infix) + Dump (multi-line prefix form)
+pkg/layout/                 the layer-3 facade + root-registry adapters
+  layout.go               Kind, options, Engine/Session/Mapping abstract factory
+  f2.go                   F₂ backend + root-Algebra adapter (init-registered)
+  subgroupchain.go        sub-group chain backend + root-Algebra adapter
+  lower.go                per-algebra lowering + LowerAccess/LowerOffset dispatch
 internal/f2/                the F₂ algebra (power-of-2 tiles)
   expr.go                 expression trees, F₂ scalars, structural equality
   order.go                OTuple — the structural total order
@@ -291,13 +347,14 @@ engine), vectors and coefficient matrices, exact elimination, all four layout
 map types, both optimization pipelines, and the dump utilities.
 
 The sub-group chain algebra provides its access and stride mappings with
-machine-verified bijection soundness (see its README); its GMEM/SMEM
-optimization passes and the universal-interface adapters are in progress.
+machine-verified bijection soundness (see its README), plus its GMEM/SMEM
+optimization passes.
 
-The universal interface (`layoutalgebra.Algebra`) and registry are in place;
-per-algebra adapters land with each algebra's optimization work, and the
-AST/code-generation layer is deliberately deferred until all algebras are
-complete.
+The universal integration layer has landed: both algebras are registered in
+the root `layoutalgebra` registry via `pkg/layout`'s adapters, and the
+`pkg/ast` + `pkg/layout` facade gives consumers algebra-agnostic stage
+artifacts. What remains deferred is the per-algebra *compiler backend* that
+consumes the universal AST and emits index arithmetic.
 
 Deliberately out of scope (the F₂ model does not cover them): affine/constant
 offsets (handled by the emitter as integer adds on top of the linear part),
