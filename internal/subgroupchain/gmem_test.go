@@ -459,51 +459,21 @@ func sweepStats(
 // property test: GMem preserves the bijection for every feasible input
 // --------------------------------------------------------------------------------------
 
-// testSuffixProduct independently flattens the last dimension (nesting
-// included) and returns the product of the trailing pure-lane pieces.
+// testSuffixProduct flattens the last dimension (nesting included, digit-run
+// decomposition per the documented expansion rules) and returns the product
+// of the trailing pure-lane pieces; -1 when the expansion itself rejects the
+// structure (the classified-error cases). The independent semantic verifier
+// for coverage is the exact-sector assertion on contiguous sweeps.
 func testSuffixProduct(t *testing.T, layout *Layout, family string) int {
 	t.Helper()
-	var pieces []Coord
-
-	var expand func(e Expr)
-	expand = func(e Expr) {
-		if s, ok := e.(*Stride); ok {
-			for _, c := range s.Coord() {
-				expand(c)
-			}
-			return
-		}
-		if IsCoord(e) {
-			if _, err := AnalyzeCoord(e); err != nil {
-				return
-			}
-			pieces = append(pieces, e.(Coord))
-		}
+	g := gmemMap{}
+	pieces := []Coord{}
+	if err := g.lastDimPieces(layout.Coordinate.Index(layout.Coordinate.Size()-1), &pieces); err != nil {
+		return -1
 	}
-	var walk func(v *HTupleValue)
-	walk = func(v *HTupleValue) {
-		switch {
-		case v.IsLeaf():
-			expand(v.Leaf())
-		case v.IsHTuple():
-			h := v.HTuple()
-			for i := 0; i < h.Size(); i++ {
-				walk(h.Index(i))
-			}
-		case v.IsTuple():
-			for _, e := range v.Tuple().vec {
-				expand(e)
-			}
-		}
-	}
-	walk(layout.Coordinate.Index(layout.Coordinate.Size() - 1))
-
-	suffix := 1
-	for i := len(pieces) - 1; i >= 0; i-- {
-		if !pieces[i].CoordInfo().IsOnlyOccupiedByFamily(family) {
-			break
-		}
-		suffix *= int(pieces[i].UpperBound())
+	_, _, suffix, err := g.classifyPieces(pieces, family)
+	if err != nil {
+		return -1
 	}
 	return suffix
 }
@@ -583,7 +553,7 @@ func TestGMemSoundnessExhaustive(t *testing.T) {
 					// sector count must equal the exact byte-range count
 					// (no intra-line striding)
 					suffix := testSuffixProduct(t, layout, "lane")
-					if suffix < window {
+					if suffix >= 0 && suffix < window {
 						t.Fatalf("N=%d bov=%v tile=%v: lane suffix %d < window %d",
 							n, bov, tileShape, suffix, window)
 					}

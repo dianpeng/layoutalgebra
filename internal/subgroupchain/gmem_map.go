@@ -86,19 +86,23 @@ func (self *gmemMap) windowSize(
 	return common.Min3(lastDimExtent, lineSize, freedom), nil
 }
 
-// familyFreedom returns the product of the upper bounds of every Variable of
-// the given family anywhere in the layout's coordinate tree, recursing into
-// nested dimensions. Each variable occurs exactly once (access bijection), so
-// the product is the family's total freedom V. An absent family yields the
+// familyFreedom returns the product of the upper bounds of every DISTINCT
+// Variable of the given family anywhere in the layout's coordinate tree,
+// recursing into nested dimensions. Notes multiple digits can source the
+// same Variable node (the coordinate tree is a DAG over its Variables), so
+// each variable is counted once, by identity. An absent family yields the
 // empty product, 1.
 func (self *gmemMap) familyFreedom(layout *Layout, family string) int {
 	out := 1
+	seen := make(map[*Variable]bool)
 	count := func(e Expr) {
 		Visit(
 			e,
 			func(Expr) bool { return true },
 			func(e Expr) error {
-				if varNode, ok := e.(*Variable); ok && varNode.Family() == family {
+				if varNode, ok := e.(*Variable); ok && varNode.Family() == family &&
+					!seen[varNode] {
+					seen[varNode] = true
 					out *= int(varNode.UpperBound())
 				}
 				return nil
@@ -299,8 +303,15 @@ func (self *gmemMap) classifyPieces(
 }
 
 // remapLastDim re-runs the access map for the last dimension against its
-// (possibly nested) shape, distributing the combined variable's low digits to
-// the flattened tail — which is exactly where the relevant pieces must sit.
+// (possibly nested) shape.
+//
+// Notes the access map assigns a variable's LOW digits to the FIRST (most
+// significant) dimensions — the day-one convention (dim0 = warp % 7). For a
+// flat last dim the remap is an identity, so piece order IS weight order and
+// the relevant pieces go LAST. For a nested last dim the sub-access
+// redistributes the combined variable: the flattened tail receives the
+// combined variable's FIRST piece — so the relevant pieces go FIRST. The
+// caller builds `combined` accordingly (see assembleLastDim).
 func (self *gmemMap) remapLastDim(env *Env, layout *Layout, combined Coord) error {
 	lastShape := layout.Shape.Last()
 	lastIdx := layout.Coordinate.Size() - 1
@@ -323,6 +334,29 @@ func (self *gmemMap) remapLastDim(env *Env, layout *Layout, combined Coord) erro
 		layout.Coordinate.SetLeaf(lastIdx, flat.Index(0).Leaf())
 	}
 	return nil
+}
+
+// assembleLastDim orders the new last-dim pieces so the relevant (family)
+// pieces land on the flattened tail after the remap: last for a flat last
+// dim, first for a nested one (see remapLastDim for the digit-order
+// convention).
+func (self *gmemMap) assembleLastDim(
+	env *Env,
+	layout *Layout,
+	nonLane []Coord,
+	lane []Coord,
+) Coord {
+	var pieces []Coord
+	if layout.Shape.Last().IsRecursive() {
+		pieces = append(pieces, lane...) // nested: first piece reaches the tail
+		pieces = append(pieces, nonLane...)
+	} else {
+		pieces = append(pieces, nonLane...)
+		pieces = append(pieces, lane...) // flat: last pieces are the tail
+	}
+	out := env.Factory.StrideCoord(pieces)
+	AnalyzeRange(out)
+	return out.(Coord)
 }
 
 // --------------------------------------------------------------------------------------
@@ -537,19 +571,14 @@ func (self *gmemMap) adjust(
 			p.htuple.SetLeaf(p.idx, Replace(p.root, p.replacements))
 		}
 
-		// new last dim = leftover pool ++ arrivals ++ relevant pieces — the
-		// relevant pieces form the suffix (low weights), so the warp sweep
-		// covers a contiguous window
-		newPieces := []Coord{}
+		nonLane := []Coord{}
 		if outcome.leftover != nil {
-			newPieces = append(newPieces, outcome.leftover.(Coord))
+			nonLane = append(nonLane, outcome.leftover.(Coord))
 		}
-		newPieces = append(newPieces, outcome.swapIn...)
-		newPieces = append(newPieces, relevant...)
-		combined := env.Factory.StrideCoord(newPieces)
-		AnalyzeRange(combined)
-
-		return self.remapLastDim(env, layout, combined.(Coord))
+		lane := append([]Coord{}, outcome.swapIn...)
+		lane = append(lane, relevant...)
+		combined := self.assembleLastDim(env, layout, nonLane, lane)
+		return self.remapLastDim(env, layout, combined)
 	}
 
 	if len(tried) == 0 {
@@ -613,12 +642,10 @@ func (self *gmemMap) run(
 	check.Check(existedSize*relevantSize == layout.Shape.Last().Rank())
 
 	if relevantSize >= window {
-		// non-relevant pieces to the high weights, relevant to the tail
-		newPieces := append([]Coord{}, rest...)
-		newPieces = append(newPieces, relevant...)
-		combined := env.Factory.StrideCoord(newPieces)
-		AnalyzeRange(combined)
-		return self.remapLastDim(env, layout, combined.(Coord))
+		// all the relevant freedom is already in the dim, just misplaced:
+		// reorder the pieces (relevant to the tail) and remap, no draw
+		combined := self.assembleLastDim(env, layout, rest, relevant)
+		return self.remapLastDim(env, layout, combined)
 	}
 
 	// [5] readjust: divisor-search draw from the donor dimensions
