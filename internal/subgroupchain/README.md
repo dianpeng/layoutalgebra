@@ -5,14 +5,15 @@
 ## Status (2026-11-17)
 
 - Working
-  - **Memory-hierarchy optimization framework** (universal components, each
-    independently testable): production reference interpreter (`Eval`), warp
-    sweep measurement (`SweepLane` — sectors AND bank distinctness), last-dim
-    analysis (`AnalyzeLastDim`, `FamilyFreedom`), the coverage repair engine
-    (`ReorderLastDim`, `DrawIntoLastDim` with the gcd feasibility theorem and
-    pre-commit suffix verification), and the `Pass`/`Context`/`Optimize` driver
-    (window -> analysis -> fast path -> transform stage -> coverage repair ->
-    post-check)
+  - **Memory-hierarchy optimization framework** (`memory_optimization.go`,
+    universal components each independently testable, grouped in reading
+    order): the `Pass`/`Context`/`Optimize` driver (window -> analysis ->
+    fast path -> transform stage -> coverage repair -> post-check), last-dim
+    analysis (`AnalyzeLastDim`, `FamilyFreedom`), warp sweep measurement
+    (`SweepLane` — sectors AND bank distinctness), the reference interpreter
+    (`Eval`), and the coverage repair engine (`ReorderLastDim`,
+    `DrawIntoLastDim` with the gcd feasibility theorem and pre-commit suffix
+    verification)
   - Expression IR: Variable / Const / Symbol / Binary(Add/Sub/Mul/Div/Mod) /
     Coordinate / Stride
     - Notes, `Div` is truncating integer division; `Stride` is an opaque dot-product
