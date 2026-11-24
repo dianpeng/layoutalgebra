@@ -68,7 +68,7 @@ The native algebra APIs live under `internal/` and are in-module only, so
 out-of-module consumers integrate against `pkg/layout` + `pkg/ast` alone:
 
 ```go
-eng, _ := layout.New(layout.F2)            // or layout.SubgroupChain
+eng, _ := layout.New(layout.SubgroupChain) // or layout.F2 for power-of-2 tiles
 sess, _ := eng.NewSession(layoutalgebra.Problem{
     Tile:        layoutalgebra.Tile{Shape: []int{7, 16, 4}, DTypeSize: 4},
     Concurrency: []layoutalgebra.Variable{
@@ -80,11 +80,15 @@ sess, _ := eng.NewSession(layoutalgebra.Problem{
 base, _ := sess.Access()        // base.Access (Tuple), base.Offset
 gmem, _ := sess.GmemOptimize()  // gmem.Offset -> translate into compiler IR
 smem, _ := sess.SmemOptimize()
-// testing / reference: ast.Eval(gmem.Offset, map[string]int{"w": 3, "t": 17})
+off, _ := ast.Eval(gmem.Offset, map[string]int{"w": 3, "t": 17}) // reference evaluation
+_ = off
 ```
 
 Choosing F₂ vs sub-group chain is a one-token change (`layout.F2` ↔
-`layout.SubgroupChain`): identical stage methods, identical artifact types.
+`layout.SubgroupChain`): identical stage methods, identical artifact types —
+provided the problem satisfies the chosen algebra's preconditions (F₂ wants
+power-of-2 tile extents; the sub-group chain wants Π(bounds) == Π(extents)).
+Both are checked loudly at `NewSession`.
 
 | Option                | Default | Feeds                                                        |
 | --------------------- | ------- | ------------------------------------------------------------ |
@@ -338,7 +342,7 @@ are not.
 | Termination witnesses | every rule application decreases its witness | `convergence_test.go` |
 | Confluence | permuted rule orders → identical canonical forms | `convergence_test.go` |
 | CUDA reference scenarios | warp access (saturated bank), strided access (swizzle repair 3→5), full-pipeline runs, custom-segment scoring | `layout_cuda_test.go`, `pipeline_test.go`, `gmem_coalescing_map_test.go` |
-| Full suite | 73 test functions, `go vet` clean, `gofmt` clean, `-count=20` stable | — |
+| Full suite | 71 test functions, `go vet` clean, `gofmt` clean, `-count=20` stable | — |
 
 Run it:
 
@@ -383,6 +387,22 @@ internal/subgroupchain/     the Z/k sub-group chain algebra (arbitrary extents)
 internal/common/            shared numeric helpers (GCD, strides, products)
 internal/check/             invariant-assertion guards (Check/DCheck/Unreachable)
 ```
+
+## Documentation
+
+Theory and consumer guides for both algebras live under `doc/`:
+
+- `doc/f2.md` — the F₂ algebra: GF(2) arithmetic, the bit-vector offset
+  model, the guarantees the code enforces, and when to choose it.
+- `doc/subgroupchain.md` — the Z/k sub-group chain algebra: hierarchical
+  tuples, bag-of-variables access mapping, conservative optimization, and
+  when to choose it.
+
+Both end with a "Which algebra?" decision section. The internal
+`internal/f2/theory.md` (fold-engine formal model) and
+`internal/subgroupchain/README.md` (data-structure notes and pass design)
+remain the drift-prone primary sources; the `doc/` files link back to them
+rather than duplicating them.
 
 ## Status
 
