@@ -16,7 +16,3 @@ Runnable consumer programs for the universal integration layer
   with `layout.WithBankWindow`: distinct-banks-per-warp report via
   `ast.Eval`, plus both smem-stage outcomes (saturated success and the
   conservative-contract decline) (`go run ./examples/smem-swizzle`).
-
-The singular `example/` is the end-to-end tour of both algebras (all
-three stages, `ast.Dump`, conservative-error handling):
-`go run ./example`.

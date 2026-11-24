@@ -110,31 +110,30 @@ assignment of the concurrency variables on enumerated small problems,
 algebras and all three stages, and access/optimized offsets stay bijections
 onto the tile's byte multiples.
 
-### Runnable example
+### Runnable examples
 
 ```bash
-go run ./example
+go run ./examples/compilerpass    # consumer-side "pass" pattern, both algebras
+go run ./examples/gmem-coalescing # focused GMEM coalescing (sub-group chain)
+go run ./examples/smem-swizzle    # SMEM bank-conflict analysis (F₂)
 ```
 
-A deterministic end-to-end tour of the facade on both algebras:
-
-- the one-token algebra switch (`layout.F2` ↔ `layout.SubgroupChain`) with
-  identical stage calls and artifact types;
-- all three stage methods per algebra (`Access`, `GmemOptimize`,
-  `SmemOptimize`), each `Offset` AST printed in infix form;
-- an `SmemOptimize` conservative error handled informationally on the F₂
-  4x8 tiling (printed, execution continues), then a 4x32 tiling where the
-  same stage succeeds;
-- `ast.Eval` reference evaluation on fixed assignments for both algebras;
-- `ast.Dump` tree rendering of a GMEM offset AST;
-- a lane-first sub-group-chain problem where `GmemOptimize` actually
-  rewrites the mapping (draws lane freedom into the last dimension).
+See `examples/README.md` for what each demonstrates. Together they cover the
+facade end to end: the one-token algebra switch (`layout.F2` ↔
+`layout.SubgroupChain`) with identical stage calls and artifact types, all
+three stage methods per algebra (`Access`, `GmemOptimize`, `SmemOptimize`)
+with each `Offset` AST printed in infix form, an `SmemOptimize` conservative
+error handled informationally alongside a saturated success, `ast.Eval`
+reference evaluation on fixed assignments, `ast.Dump` tree rendering, and a
+lane-first sub-group-chain problem where `GmemOptimize` actually rewrites
+the mapping (draws lane freedom into the last dimension).
 
 The two algebras' lowered ASTs consume differently-named `ast.Eval`
 assignments: F₂ works at bit granularity, so its ASTs reference per-bit
 variables — bit `j` of variable `v` is named `v`+`j` (`w0`, `t1`, ...) — and
 a variable-level assignment like `{w: 2, t: 5}` must be expanded to bit
-level first (see `expandBits` in `example/main.go`); sub-group-chain ASTs
+level first (see `expandBits` in `examples/compilerpass/main.go`);
+sub-group-chain ASTs
 consume the variable-level names (`w`, `t`) directly.
 
 ---
@@ -348,7 +347,7 @@ Run it:
 
 ```bash
 go build ./... && go vet ./... && go test ./... -count=1
-go run ./example      # end-to-end tour of the integration layer
+go run ./examples/compilerpass   # end-to-end tour of the integration layer
 ./scripts/format.sh   # keep gofmt-clean
 ```
 
@@ -366,8 +365,10 @@ pkg/layout/                 the layer-3 facade + root-registry adapters
   f2.go                   F₂ backend + root-Algebra adapter (init-registered)
   subgroupchain.go        sub-group chain backend + root-Algebra adapter
   lower.go                per-algebra lowering + LowerAccess/LowerOffset dispatch
-example/                    runnable end-to-end example (go run ./example)
-  main.go                 both algebras, all three stages, Eval/Dump artifacts
+examples/                   runnable consumer programs (see examples/README.md)
+  compilerpass/           the "pass" pattern: both algebras through the facade
+  gmem-coalescing/        GMEM coalescing on the sub-group-chain backend
+  smem-swizzle/           SMEM bank-conflict analysis on the F₂ backend
 internal/f2/                the F₂ algebra (power-of-2 tiles)
   expr.go                 expression trees, F₂ scalars, structural equality
   order.go                OTuple — the structural total order
@@ -418,8 +419,8 @@ The universal integration layer has landed: both algebras are registered in
 the root `layoutalgebra` registry via `pkg/layout`'s adapters, and the
 `pkg/ast` + `pkg/layout` facade gives consumers algebra-agnostic stage
 artifacts. What remains deferred is the per-algebra *compiler backend* that
-consumes the universal AST and emits index arithmetic. `go run ./example`
-tours the landed facade end to end on both algebras.
+consumes the universal AST and emits index arithmetic. `go run
+./examples/compilerpass` tours the landed facade end to end on both algebras.
 
 Deliberately out of scope (the F₂ model does not cover them): affine/constant
 offsets (handled by the emitter as integer adds on top of the linear part),
