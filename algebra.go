@@ -24,13 +24,22 @@ type Variable struct {
 
 // Problem is the algebra-agnostic problem description handed to every Algebra
 // implementation. Implementations must not mutate it.
+//
+// The ORDER of Concurrency is semantic, not cosmetic: each implementation
+// maps the variables in the given order (major -> minor significance). The
+// sub-group chain algebra in particular expects the lane variable LAST in
+// the slice, so its freedom trails into the low-weight tail — the position
+// the GMEM/SMEM optimization stages score against. An ill-ordered problem
+// still runs, but the optimization passes see less coalescing freedom.
 type Problem struct {
 	Tile        Tile
 	Concurrency []Variable
 
 	// Lane is the Name of the per-warp induction variable within Concurrency
 	// (the variable a warp's threads differ in, eg threadIdx % 32). GMEM/SMEM
-	// optimization stages score the mapping against its sweep.
+	// optimization stages score the mapping against its sweep. Put it last in
+	// Concurrency for the sub-group chain algebra (see the package note
+	// above).
 	Lane string
 }
 

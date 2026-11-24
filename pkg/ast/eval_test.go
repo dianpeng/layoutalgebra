@@ -1,6 +1,26 @@
 package ast
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
+
+// ExampleEval demonstrates the variable-binding contract: every Var and
+// Symbol in the tree must have an entry in the assignment map, named by
+// Name (the Family is grouping metadata, not part of the binding key).
+func ExampleEval() {
+	// (t ^ M) + (w * 2) at t=9, M=12, w=3  =>  (9^12) + 6 = 11
+	e := NewAdd(
+		NewXor(NewVar("t", "lane"), NewSymbol("M")),
+		NewMul(NewVar("w", "warp"), NewConst(2)),
+	)
+	v, err := Eval(e, map[string]int{"t": 9, "M": 12, "w": 3})
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(v)
+	// Output: 11
+}
 
 func TestEvalConst(t *testing.T) {
 	v, err := Eval(NewConst(5), nil)

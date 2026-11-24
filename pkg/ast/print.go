@@ -6,14 +6,18 @@ import (
 	"strings"
 )
 
-// String methods — infix, fully parenthesized so distinct shapes always
-// render distinctly. A Var with a family renders as "family.name"; a bare
-// Var renders as its name alone.
+// String renders the node infix, fully parenthesized so distinct shapes
+// always render distinctly. A Var with a family renders as "family.name";
+// a bare Var renders as its name alone.
 
+// String renders a literal integer.
 func (self *Const) String() string { return strconv.Itoa(self.Value) }
 
+// String renders the symbol's name.
 func (self *Symbol) String() string { return self.Name }
 
+// String renders a Var as "family.name", or just its name when Family is
+// empty.
 func (self *Var) String() string {
 	if self.Family == "" {
 		return self.Name
@@ -21,34 +25,42 @@ func (self *Var) String() string {
 	return self.Family + "." + self.Name
 }
 
+// String renders F₂ addition (bitwise exclusive-or) infix.
 func (self *Xor) String() string {
 	return "(" + self.L.String() + " ^ " + self.R.String() + ")"
 }
 
+// String renders F₂ multiplication (bitwise and) infix.
 func (self *And) String() string {
 	return "(" + self.L.String() + " & " + self.R.String() + ")"
 }
 
+// String renders integer addition infix.
 func (self *Add) String() string {
 	return "(" + self.L.String() + " + " + self.R.String() + ")"
 }
 
+// String renders integer subtraction infix.
 func (self *Sub) String() string {
 	return "(" + self.L.String() + " - " + self.R.String() + ")"
 }
 
+// String renders integer multiplication infix.
 func (self *Mul) String() string {
 	return "(" + self.L.String() + " * " + self.R.String() + ")"
 }
 
+// String renders truncating integer division infix.
 func (self *Div) String() string {
 	return "(" + self.L.String() + " / " + self.R.String() + ")"
 }
 
+// String renders the Go-semantics remainder infix.
 func (self *Mod) String() string {
 	return "(" + self.L.String() + " % " + self.R.String() + ")"
 }
 
+// String renders a Tuple as "{e0, e1, ...}".
 func (self *Tuple) String() string {
 	parts := make([]string, 0, len(self.Elem))
 	for _, e := range self.Elem {

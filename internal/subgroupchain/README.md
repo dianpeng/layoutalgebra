@@ -286,8 +286,14 @@
 
 ## SMem Bank Conflicts Avoidance
 
-- Status: NOT implemented (depends on the swizzle machinery, which is also not
-  implemented yet); design below
+- Status: PARTIALLY implemented — the bank-conflict optimization runs as a
+  framework instantiation (`Smem` in `smem_swizzle_map.go`): the objective is
+  warp-sweep bank distinctness, the fast path checks the existing layout, and
+  a universal coverage draw reorders the last dimension when needed. What is
+  NOT implemented is the transvection-based `TrySwizzle` swizzle hook (the
+  stage-4 transform slot) — without a registered hook the pass falls back to
+  reordering only. The design notes below describe the intended transvection
+  swizzle once that machinery lands.
 
 - Bank # model:
   - Assume a offset is byte oriented
