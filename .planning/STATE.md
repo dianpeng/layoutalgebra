@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-11-12)
 Phase: 01
 Plan: Not started
 Status: Milestone complete
-Last activity: 2026-11-21 - Completed quick task 261121-rqf: README integration-layer refresh + runnable example/
+Last activity: 2026-11-24 - Completed quick task 261124-bn9: Alpha-release polish (test orchestrator, code polish, API audit, docs, examples, theory docs)
 
 Progress: [██████████] 100%
 
@@ -93,6 +93,7 @@ Recent decisions affecting current work:
 | 261121-om7 | Universal integration layer — pkg/ast interchange AST + pkg/layout abstract factory (f2/subgroupchain backends, root-Algebra adapters, lowering); AST==native equivalence machine-checked on full assignment spaces, all 3 stages both algebras | 2026-11-21 | c1ac05f | Complete | [261121-om7-create-universal-integration-interfaces-](./quick/261121-om7-create-universal-integration-interfaces-/) |
 | 261121-rqf | README integration-layer usage docs + example/main.go end-to-end tour of both algebras (Access/Gmem/Smem, AST printing, Eval demos, conservative-error demo); deterministic verified output | 2026-11-21 | e5ed1b5 | Complete | [261121-rqf-update-readme-with-integration-layer-inf](./quick/261121-rqf-update-readme-with-integration-layer-inf/) |
 | 261121-fw | Universal optimization framework (Pass/Context/Optimize + Eval/Sweep/LastDim/Repair components); GMem + Smem instantiations; TrySwizzle hook = user's stage-4 slot; 2 latent bugs fixed (nested cut-split false successes, multi-var family silent fallback) | 2026-11-21 | a863c30 | Awaiting user review | [20261121-pass-framework](./quick/20261121-pass-framework/) |
+| 261124-bn9 | Alpha-release polish — scripts/test.py colored test orchestrator; conservative function-split polish (f2/subgroupchain, tests untouched oracle); public API audit + godoc (2 breaking candidates flagged not fixed); README/package-docs refresh verified against code; examples/ (compilerpass, gmem-coalescing, smem-swizzle); doc/f2.md + doc/subgroupchain.md theory docs | 2026-11-24 | 2252216 | | [261124-bn9-alpha-release-polish-1-polish-code-for-m](./quick/261124-bn9-alpha-release-polish-1-polish-code-for-m/) |
 
 ## Session Continuity
 
