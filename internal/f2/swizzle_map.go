@@ -142,6 +142,53 @@ func (self *swizzler) vectorInfo(vec Vector) (swizzleVectorInfo, error) {
 //
 // --------------------------------------------------------------------------------------
 
+// bankNullspace analyzes the bank-bit slice: it computes the bank rank and
+// the nullspace bit indices (positions within bankBits not spanned by the
+// bank-variable basis). These nullspace bits are the dimensions swizzling
+// can permute.
+func (self *swizzler) bankNullspace(bankBits Vector) (int, []int, error) {
+	result, err := self.vectorInfo(bankBits)
+	if err != nil {
+		return 0, nil, err
+	}
+	bankRank := result.Rank
+	bankBasis := result.BasisIndex // basis index
+	bankNS := []int{}              // bank's nullspace index
+	for i := 0; i < bankBits.Size(); i++ {
+		found := false
+		for _, j := range bankBasis {
+			if i == j {
+				found = true
+				break
+			}
+		}
+		if !found {
+			bankNS = append(bankNS, i)
+		}
+	}
+
+	// 4 foundational linear aglebra theorm
+	check.Check(len(bankNS) == bankBits.Rank()-len(bankBasis))
+	return bankRank, bankNS, nil
+}
+
+// freeDimensions finds the dimensions of the input vector beyond the bank
+// bits that belong to the same variable family as the bank variables. Each
+// such dimension is a degree of freedom that can be XORed into a bank
+// nullspace bit to perform the swizzle permutation.
+func freeDimensions(input Vector, bank Bank) []int {
+	freeIdx := []int{}
+	for i := bank.Skip + bank.Range; i < input.Size(); i++ {
+		if dimension := input.Index(i); BelongVariableNameFamily(
+			dimension,
+			bank.VariablePrefix,
+		) {
+			freeIdx = append(freeIdx, i)
+		}
+	}
+	return freeIdx
+}
+
 func (self *swizzler) Run(
 	bank Bank, // range of banks
 	input Vector, // input vectors
@@ -162,9 +209,6 @@ func (self *swizzler) Run(
 
 	// (1) obtain a slice of vector for bank bits analysis
 	bankBits := input.Slice(bank.Skip, bank.Skip+bank.Range)
-	bankRank := -1
-	bankBasis := []int{} // bank's basis index
-	bankNS := []int{}    // bank's nullspace index
 
 	// ensure the bank bits ONLY contain allowed variable as basis, otherwise, not supported
 	for _, name := range bankBits.BasisName() {
@@ -175,26 +219,9 @@ func (self *swizzler) Run(
 	}
 
 	// checking weather the bankBits is fully ranked, if so, we cannot do better by swizzle
-	if result, err := self.vectorInfo(bankBits); err != nil {
+	bankRank, bankNS, err := self.bankNullspace(bankBits)
+	if err != nil {
 		return Vector{}, err
-	} else {
-		bankRank = result.Rank
-		bankBasis = result.BasisIndex // basis index
-		for i := 0; i < bankBits.Size(); i++ {
-			found := false
-			for _, j := range bankBasis {
-				if i == j {
-					found = true
-					break
-				}
-			}
-			if !found {
-				bankNS = append(bankNS, i)
-			}
-		}
-
-		// 4 foundational linear aglebra theorm
-		check.Check(len(bankNS) == bankBits.Rank()-len(bankBasis))
 	}
 
 	// checking bank rank against possible maximum permutation
@@ -207,15 +234,7 @@ func (self *swizzler) Run(
 	//     swizzle change in the iteration/permutation space. To address this issue, one
 	//     simple way is to chase the bit range (bank.Range, ...) and hit a dimension with
 	//     full variable name, (ie basis) that from the same variable family
-	freeIdx := []int{}
-	for i := bank.Skip + bank.Range; i < input.Size(); i++ {
-		if dimension := input.Index(i); BelongVariableNameFamily(
-			dimension,
-			bank.VariablePrefix,
-		) {
-			freeIdx = append(freeIdx, i)
-		}
-	}
+	freeIdx := freeDimensions(input, bank)
 
 	// no free dimension exists — report it instead of panicking inside
 	// NewCoeffMat's m > 0 check downstream (WR-06)
@@ -225,8 +244,6 @@ func (self *swizzler) Run(
 
 	// (3) gather a new vector and check weather its rank matches or not
 	freeVector := input.Gather(freeIdx)
-	freeRank := -1
-	freeBasisIdx := []int{}
 	result, err := self.vectorInfo(freeVector)
 	if err != nil {
 		return Vector{}, err
@@ -236,10 +253,11 @@ func (self *swizzler) Run(
 		return Vector{}, SwizzleErrorNoFreeDegree
 	}
 	// Using freeIdx to convert it back to freeVector space
+	freeBasisIdx := []int{}
 	for _, bIdx := range result.BasisIndex {
 		freeBasisIdx = append(freeBasisIdx, freeIdx[bIdx])
 	}
-	freeRank = result.Rank
+	freeRank := result.Rank
 
 	// (4) now we know that free vector contains dimension CAN BE used for combination
 	//     for swizzle bank.

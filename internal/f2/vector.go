@@ -298,11 +298,10 @@ func (self *Vector) doCoeffMat(vec []Expr, basis []string) (CoeffMat, error) {
 //
 // 6) Lastly extract each basis coefficient accordingly.
 
-func (self *Vector) extractLinearCoeffVector(expr Expr, order []string) ([]Expr, error) {
-	// [1] 2 passes to decide the frontier hence to get the partition knob
-	//     one extra passes to assert linearity
-
-	// [1.1] backward pass to propagate # of variables per expression in Post Order
+// novMarkPostOrder runs a backward pass that propagates the number of
+// variables (NOV) per expression in post-order, storing it in each node's
+// Marker: const/symbol => 0, variable => 1, binary => L+R.
+func novMarkPostOrder(expr Expr) {
 	VisitPost(
 		expr,
 		func(Expr) bool { return true },
@@ -330,21 +329,22 @@ func (self *Vector) extractLinearCoeffVector(expr Expr, order []string) ([]Expr,
 			return nil
 		},
 	)
+}
 
-	// [1.2] Check linearity, it becomes very obivious to check linearity invariants here
-	//       after the # of variables information been marked.
-	//
-	// Linearity invariants
-	//
-	// (0) Denote # of variables as NOV(node): return node's number of variables
-	//
-	// For a given **binary node** M, NOV(node) >= 1
-	//
-	// (1) if NOV(L(M)) >= 1 && NOV(R(M)) == 0 && OP(M) == Add => affine
-	// (2) if NOV(R(M)) >= 1 && NOV(L(M)) == 0 && OP(M) == Add => affine
-	// (3) if NOV(L(M)) >= 1 && NOV(R(M)) >= 1 && OP(M) == Mul => super-linear
-
-	if err := Visit(
+// checkLinearCoeffLinearity checks the linearity invariants after the
+// NOV information has been marked by novMarkPostOrder.
+//
+// # Linearity invariants
+//
+// (0) Denote # of variables as NOV(node): return node's number of variables
+//
+// For a given **binary node** M, NOV(node) >= 1
+//
+// (1) if NOV(L(M)) >= 1 && NOV(R(M)) == 0 && OP(M) == Add => affine
+// (2) if NOV(R(M)) >= 1 && NOV(L(M)) == 0 && OP(M) == Add => affine
+// (3) if NOV(L(M)) >= 1 && NOV(R(M)) >= 1 && OP(M) == Mul => super-linear
+func checkLinearCoeffLinearity(expr Expr) error {
+	return Visit(
 		expr,
 		func(b Expr) bool { return b.Kind() == Binary },
 		func(e Expr) error {
@@ -365,27 +365,17 @@ func (self *Vector) extractLinearCoeffVector(expr Expr, order []string) ([]Expr,
 			}
 			return nil
 		},
-	); err != nil {
-		return nil, err
-	}
-	// one more case, the expression is entirely not parametrized by the basis, which is
-	// yet anoter none linearity, ie affine from zero vector
-	if expr.Marker() == 0 {
-		if expr.Kind() != Const || !expr.(*NodeConst).Value().IsZero() {
-			return nil, fmt.Errorf("affine from zero vector")
-		}
-		// Zero row: a valid linear-map row (e.g. byte-padding bits after a
-		// stride shift). Yields all-zero coefficients — handled, not an error.
-		out := make([]Expr, len(order))
-		for i := range out {
-			out[i] = NewConstZero()
-		}
-		return out, nil
-	}
+	)
+}
 
-	// [1.3] Forward pass to get the frontier for each variable closure, hence we get
-	//       the greatest variable closure. Notes this requires early exit during
-	//       scanning, hence we need to use ad-hoc method
+// forwardCollectFrontier performs a forward pass over the marked tree to
+// get the frontier of each variable closure, hence the greatest variable
+// closure. It returns exprMap (variable name -> its sub-expression) and
+// danglingMul (RHS-most constant multiplication factors).
+//
+// Notes this requires early exit during scanning, hence we need to use
+// ad-hoc method
+func forwardCollectFrontier(expr Expr) (map[string]Expr, []Expr, error) {
 	exprMap := make(map[string]Expr)
 	danglingMul := []Expr{}                                 // rhs most multiplication
 	var forwardVisit func(parent *NodeBinary, e Expr) error // need recursion
@@ -427,65 +417,106 @@ func (self *Vector) extractLinearCoeffVector(expr Expr, order []string) ([]Expr,
 		return nil
 	}
 	if err := forwardVisit(nil, expr); err != nil {
+		return nil, nil, err
+	}
+	return exprMap, danglingMul, nil
+}
+
+// distributeDanglingMul performs the per variable closure normalization for
+// each dangling constant factor: distribution law, then folding, then
+// write-back into exprMap.
+func distributeDanglingMul(exprMap map[string]Expr, danglingMul []Expr) {
+	for _, c := range danglingMul {
+		check.Check(IsStaticExprRecursive(c))
+		for key, val := range exprMap {
+			// distribution law
+			val = NewBinary(Mul, c, val)
+
+			// folding
+			val = Fold(val)
+
+			// write back
+			exprMap[key] = val
+		}
+	}
+}
+
+// extractBasisCoefficient extracts the coefficient expression of the single
+// variable vName inside its closure c. Basically just chasing the expression
+// to collect all LHS symbols until the inner most RHS symbol, which is a
+// variable (MUST) due to the fold.
+func extractBasisCoefficient(c Expr, vName string) Expr {
+	switch node := c.(type) {
+	case *NodeBinary:
+		// Variable node has its coefficient. Under the global order
+		// (const < symbol < variable < binary) the canonical Mul is
+		// variable-ON-LEFT, coefficient-on-right (x * (1 ^ S)); accept
+		// the variable on either side.
+		//
+		// Notes for multiple different coefficient terms, it should be
+		// resolved: ie (C1 * v) + (C2 * v) => (C1 + C2) * v
+		if l, ok := node.L().(*NodeVariable); ok {
+			check.Check(l.Name() == vName)
+			return node.R()
+		}
+		r := node.R()
+		check.Check(r.Kind() == Variable)
+		check.Check(r.(*NodeVariable).Name() == vName)
+		return node.L()
+
+	case *NodeVariable:
+		check.Check(node.Name() == vName)
+		return NewConstOne()
+
+	default:
+		check.Unreachable()
+		return nil
+	}
+}
+
+func (self *Vector) extractLinearCoeffVector(expr Expr, order []string) ([]Expr, error) {
+	// [1] 2 passes to decide the frontier hence to get the partition knob
+	//     one extra passes to assert linearity
+
+	// [1.1] backward pass to propagate # of variables per expression in Post Order
+	novMarkPostOrder(expr)
+
+	// [1.2] Check linearity, it becomes very obivious to check linearity invariants here
+	//       after the # of variables information been marked.
+	if err := checkLinearCoeffLinearity(expr); err != nil {
+		return nil, err
+	}
+	// one more case, the expression is entirely not parametrized by the basis, which is
+	// yet anoter none linearity, ie affine from zero vector
+	if expr.Marker() == 0 {
+		if expr.Kind() != Const || !expr.(*NodeConst).Value().IsZero() {
+			return nil, fmt.Errorf("affine from zero vector")
+		}
+		// Zero row: a valid linear-map row (e.g. byte-padding bits after a
+		// stride shift). Yields all-zero coefficients — handled, not an error.
+		out := make([]Expr, len(order))
+		for i := range out {
+			out[i] = NewConstZero()
+		}
+		return out, nil
+	}
+
+	// [1.3] Forward pass to get the frontier for each variable closure
+	exprMap, danglingMul, err := forwardCollectFrontier(expr)
+	if err != nil {
 		return nil, err
 	}
 
 	// [2] perform the per variable closure normalization
-	for _, c := range danglingMul {
-		check.Check(IsStaticExprRecursive(c))
-		for key, val := range exprMap {
-			// [2.1] distribution law
-			val = NewBinary(Mul, c, val)
-
-			// [2.2] folding
-			val = Fold(val)
-
-			// [2.3] write back
-			exprMap[key] = val
-		}
-	}
+	distributeDanglingMul(exprMap, danglingMul)
 
 	// [3] Now, we can extract the coefficient for our per variable closure term
-	//     however complicated it is, we can be able to extract them cleanly. Basically
-	//     just chasing the expression to collect all LHS symbols until the inner most
-	//     RHS symbol, which is a variable (MUST) due to the fold
 	out := make([]Expr, 0, len(order))
 	for _, vName := range order {
 		c := exprMap[vName]
 		if c != nil {
 			check.Check(c.Marker() == 1)
-			var coeffExpr Expr // coefficient of the variable
-
-			switch node := c.(type) {
-			case *NodeBinary:
-				// Variable node has its coefficient. Under the global order
-				// (const < symbol < variable < binary) the canonical Mul is
-				// variable-ON-LEFT, coefficient-on-right (x * (1 ^ S)); accept
-				// the variable on either side.
-				//
-				// Notes for multiple different coefficient terms, it should
-				// be resolved: ie (C1 * v) + (C2 * v) => (C1 + C2) * v
-				if l, ok := node.L().(*NodeVariable); ok {
-					check.Check(l.Name() == vName)
-					coeffExpr = node.R()
-					break
-				}
-				r := node.R()
-				check.Check(r.Kind() == Variable)
-				check.Check(r.(*NodeVariable).Name() == vName)
-				coeffExpr = node.L()
-				break
-
-			case *NodeVariable:
-				check.Check(node.Name() == vName)
-				coeffExpr = NewConstOne()
-				break
-
-			default:
-				check.Unreachable()
-				break
-			}
-			out = append(out, coeffExpr)
+			out = append(out, extractBasisCoefficient(c, vName))
 		} else {
 			// 0 coefficient
 			out = append(out, NewConstZero())
